@@ -1,0 +1,36 @@
+run:
+  input_file: sample_run_1.csv
+  output_processed_data: true
+  use_input_prefix: true
+
+visualization:
+  dashboard_host: localhost
+  dashboard_port: 8050
+  generate_visualization: true
+
+data:
+  multiple_value_1:
+    objective: minimize
+    variable:
+      type: multi
+      selection_strategy: index
+      selection_value: 0
+    tolerance:
+      type: absolute
+      value: 1.5
+    
+  single_value_1:
+    objective: minimize
+    variable:
+      type: single
+    tolerance:
+      type: absolute
+      value: 2.0
+
+  single_value_2:
+    objective: maximize
+    variable:
+      type: single
+    tolerance:
+      type: relative
+      value: 0.05

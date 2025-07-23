@@ -1,0 +1,9 @@
+platypus-opt>=1.0.4
+pandas>=2.0.0
+numpy>=1.24.0
+plotly>=5.15.0
+dash>=2.14.0
+pyyaml>=6.0
+json5>=0.9.14
+pyarrow>=12.0.0
+scipy>=1.10.0 
