@@ -173,6 +173,7 @@ ENV/
 Thumbs.db 
 
 # ==== Custom ====
+*.txt
+!requirements.txt
 runs/*
-!runs/sample_run_1/
-!runs/sample_run_1/**
+!runs/sample_run_1/*
