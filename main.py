@@ -45,6 +45,7 @@ Examples:
     parser.add_argument('--run-dir', help='Run directory for outputs (defaults to config file directory)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     parser.add_argument('--dashboard-only', action='store_true', help='Only launch dashboard using vis_data.npz and config (skip processing)')
+    parser.add_argument('--bind-all', action='store_true', help='Bind dashboard to all network interfaces (0.0.0.0), making it accessible externally.')
     
     args = parser.parse_args()
     
@@ -68,10 +69,11 @@ Examples:
             pareto_indices = npz['pareto_indices']
             tolerances = npz['tolerances']
             dashboard = Dashboard(config, data, pareto_indices, tolerances)
-            dashboard.run(
-                host=config.get('visualization', {}).get('dashboard_host', 'localhost'),
-                port=config.get('visualization', {}).get('dashboard_port', 8050)
-            )
+            
+            host = '0.0.0.0' if args.bind_all else config.get('visualization', {}).get('dashboard_host', 'localhost')
+            port = config.get('visualization', {}).get('dashboard_port', 8050)
+            
+            dashboard.run(host=host, port=port)
             return
         
         logger.info(f"Loading configuration from {args.config}")
@@ -171,7 +173,7 @@ Examples:
         # Launch dashboard if requested
         generate_viz = viz_config.get('generate_visualization', False)
         if generate_viz:
-            dashboard_host = viz_config.get('dashboard_host', 'localhost')
+            dashboard_host = '0.0.0.0' if args.bind_all else viz_config.get('dashboard_host', 'localhost')
             dashboard_port = viz_config.get('dashboard_port', 8050)
             logger.info(f"Launching dashboard on {dashboard_host}:{dashboard_port}")
             dashboard = Dashboard(config, processed_data, pareto_indices, tolerances)
