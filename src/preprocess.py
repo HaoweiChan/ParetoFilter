@@ -4,6 +4,7 @@ Data preprocessing module for Pareto Frontier Selection Tool.
 Handles data loading, multi-value variable processing, and tolerance computation.
 """
 
+import re
 import ast
 import logging
 import numpy as np
@@ -46,9 +47,15 @@ class DataPreprocessor:
         
         elif data_path.is_dir():
             # Folder mode - load and concatenate all CSV files
-            csv_files = list(data_path.glob("*.csv"))
+            # Exclude processed and results files
+            excluded_patterns = ['*processed_data.csv', '*pareto_results.csv']
+            
+            csv_files = [
+                f for f in data_path.glob("*.csv")
+                if not any(f.match(p) for p in excluded_patterns)
+            ]
             if not csv_files:
-                raise ValueError(f"No CSV files found in directory: {data_path}")
+                raise ValueError(f"No valid CSV files found in directory: {data_path}")
             
             dataframes = []
             total_rows = 0
@@ -163,24 +170,48 @@ class DataPreprocessor:
         idx1_data = data[idx1_col].values
         idx2_data = data[idx2_col].values
         
+                # A more robust parser for string-formatted lists
+        def _parse_list(s):
+            if not isinstance(s, str):
+                return s
+            
+            # Add commas between numbers and after brackets
+            s = re.sub(r'(\d)\s+(\d)', r'\1, \2', s)
+            s = re.sub(r'\]\s+\[', r'], [', s)
+            
+            # Standardize to use commas
+            s = s.replace(' ', ', ')
+            
+            # Remove duplicate commas
+            s = re.sub(r',,', ',', s)
+            
+            # Ensure outer brackets are present
+            if not s.startswith('['): s = '[' + s
+            if not s.endswith(']'):   s = s + ']'
+
+            try:
+                return ast.literal_eval(s)
+            except (ValueError, SyntaxError):
+                raise ValueError(f"Unable to parse list: {s}")
+
         # Parse the multi-value data if it's string representation
         if isinstance(var_data[0], str):
             try:
-                var_data = [ast.literal_eval(x) for x in var_data]
-            except:
+                var_data = [_parse_list(x) for x in var_data]
+            except (ValueError, SyntaxError):
                 raise ValueError(f"Unable to parse list of lists for variable {var_name}")
         
         # Parse IDX data if string representation
         if isinstance(idx1_data[0], str):
             try:
-                idx1_data = [ast.literal_eval(x) for x in idx1_data]
-            except:
+                idx1_data = [_parse_list(x) for x in idx1_data]
+            except (ValueError, SyntaxError):
                 raise ValueError(f"Unable to parse IDX1 data for variable {var_name}")
         
         if isinstance(idx2_data[0], str):
             try:
-                idx2_data = [ast.literal_eval(x) for x in idx2_data]
-            except:
+                idx2_data = [_parse_list(x) for x in idx2_data]
+            except (ValueError, SyntaxError):
                 raise ValueError(f"Unable to parse IDX2 data for variable {var_name}")
         
         # Process each row to extract the correct value
