@@ -1,99 +1,85 @@
-data:
-  AREA:
-    objective: minimize
-    tolerance:
-      type: relative
-      value: 0.05
-    variable:
-      type: single
-  DELAY:
-    objective: minimize
-    tolerance:
-      type: relative
-      value: 0.1
-    variable:
-      idx1_values:
-      - 10
-      - 20
-      - 30
-      - 40
-      - 50
-      idx2_values:
-      - 100
-      - 200
-      - 300
-      - 400
-      - 500
-      selected_idx1: 25
-      selected_idx2: 250
-      selection_strategy: idx_based
-      type: multi
-  DYNAMIC:
-    objective: minimize
-    tolerance:
-      type: relative
-      value: 0.15
-    variable:
-      idx1_values:
-      - 0.1
-      - 0.2
-      - 0.3
-      - 0.4
-      - 0.5
-      idx2_values:
-      - 1.0
-      - 2.0
-      - 3.0
-      - 4.0
-      - 5.0
-      selected_idx1: 0.25
-      selected_idx2: 2.5
-      selection_strategy: idx_based
-      type: multi
-  LEAKAGE:
-    objective: minimize
-    tolerance:
-      type: relative
-      value: 0.1
-    variable:
-      type: single
-  OUT_CAP:
-    objective: maximize
-    tolerance:
-      type: absolute
-      value: 1.0
-    variable:
-      type: single
-  TRANSITION:
-    objective: minimize
-    tolerance:
-      type: absolute
-      value: 0.5
-    variable:
-      idx1_values:
-      - 0.05
-      - 0.1
-      - 0.15
-      - 0.2
-      - 0.25
-      idx2_values:
-      - 0.5
-      - 1.0
-      - 1.5
-      - 2.0
-      - 2.5
-      selected_idx1: 0.12
-      selected_idx2: 1.2
-      selection_strategy: idx_based
-      type: multi
-groupby_columns:
-- FP
-- STD
 run:
-  input_file: sample_data.csv
+  # Use CSV folder instead of single file
+  input_file: /path/to/csv/folder  # This should be a folder containing CSV files
   output_processed_data: true
   use_input_prefix: true
+
+# Groupby configuration - data will be grouped by these columns
+# and Pareto selection will be run separately for each group
+groupby_columns:
+  - FP
+  - STD
+
 visualization:
   dashboard_host: localhost
   dashboard_port: 8050
-  generate_visualization: false
+  generate_visualization: true
+
+# Variable configuration for the new CSV format
+data:
+  # Single-value variables (direct column values)
+  AREA:
+    objective: minimize
+    variable:
+      type: single
+    tolerance:
+      type: relative
+      value: 0.05
+      
+  OUT_CAP:
+    objective: maximize
+    variable:
+      type: single
+    tolerance:
+      type: absolute
+      value: 1.0
+      
+  LEAKAGE:
+    objective: minimize
+    variable:
+      type: single
+    tolerance:
+      type: relative
+      value: 0.1
+
+  # Multi-value variables with IDX-based selection
+  DYNAMIC:
+    objective: minimize
+    variable:
+      type: multi
+      selection_strategy: idx_based
+      # Define the bin values for IDX1 and IDX2
+      idx1_values: [0.1, 0.2, 0.3, 0.4, 0.5]  # Example bin edges for DYNAMIC_IDX1
+      idx2_values: [1.0, 2.0, 3.0, 4.0, 5.0]  # Example bin edges for DYNAMIC_IDX2
+      # Select specific values for extraction
+      selected_idx1: 0.25  # This will find the bin containing this value
+      selected_idx2: 2.5   # This will find the bin containing this value
+    tolerance:
+      type: relative
+      value: 0.15
+
+  TRANSITION:
+    objective: minimize
+    variable:
+      type: multi
+      selection_strategy: idx_based
+      idx1_values: [0.05, 0.1, 0.15, 0.2, 0.25]
+      idx2_values: [0.5, 1.0, 1.5, 2.0, 2.5]
+      selected_idx1: 0.12
+      selected_idx2: 1.2
+    tolerance:
+      type: absolute
+      value: 0.5
+
+  DELAY:
+    objective: minimize
+    variable:
+      type: multi
+      selection_strategy: idx_based
+      idx1_values: [10, 20, 30, 40, 50]
+      idx2_values: [100, 200, 300, 400, 500]
+      selected_idx1: 25
+      selected_idx2: 250
+    tolerance:
+      type: relative
+      value: 0.1
