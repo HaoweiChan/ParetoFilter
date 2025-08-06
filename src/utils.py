@@ -80,18 +80,27 @@ def validate_config(config: Dict[str, Any]) -> None:
         if variable_config['type'] == 'multi':
             if 'selection_strategy' not in variable_config:
                 raise ValueError(f"Multi-value variable '{var_name}' missing selection_strategy")
-            if 'selection_value' not in variable_config:
-                raise ValueError(f"Multi-value variable '{var_name}' missing selection_value")
             
             strategy = variable_config['selection_strategy']
-            if strategy not in ['index', 'percentile']:
+            if strategy not in ['index', 'percentile', 'idx_based']:
                 raise ValueError(f"Variable '{var_name}' has invalid selection_strategy: {strategy}")
             
-            value = variable_config['selection_value']
-            if strategy == 'index' and (not isinstance(value, int) or value < 0):
-                raise ValueError(f"Variable '{var_name}' index must be non-negative integer")
-            if strategy == 'percentile' and (not isinstance(value, (int, float)) or value < 0 or value > 100):
-                raise ValueError(f"Variable '{var_name}' percentile must be between 0 and 100")
+            if strategy == 'idx_based':
+                # Validate idx_based strategy fields
+                required_idx_fields = ['idx1_values', 'idx2_values', 'selected_idx1', 'selected_idx2']
+                for field in required_idx_fields:
+                    if field not in variable_config:
+                        raise ValueError(f"IDX-based variable '{var_name}' missing required field: {field}")
+            else:
+                # Validate legacy strategies (index, percentile)
+                if 'selection_value' not in variable_config:
+                    raise ValueError(f"Multi-value variable '{var_name}' missing selection_value")
+                
+                value = variable_config['selection_value']
+                if strategy == 'index' and (not isinstance(value, int) or value < 0):
+                    raise ValueError(f"Variable '{var_name}' index must be non-negative integer")
+                if strategy == 'percentile' and (not isinstance(value, (int, float)) or value < 0 or value > 100):
+                    raise ValueError(f"Variable '{var_name}' percentile must be between 0 and 100")
 
 
 def setup_logging(verbose: bool = False, log_file: str = None) -> None:

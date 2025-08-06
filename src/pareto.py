@@ -6,7 +6,7 @@ Handles multi-objective optimization with tolerance-based epsilon configuration.
 
 import logging
 import numpy as np
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 from platypus import EpsilonBoxArchive, Problem, Solution
 
 
@@ -94,4 +94,59 @@ class ParetoSelector:
             'objectives': [var_config['objective'] for var_config in self.variable_configs.values()]
         }
         
-        return metadata 
+        return metadata
+    
+    def select_grouped(self, data: np.ndarray, tolerances: np.ndarray, 
+                      group_info: List[Dict[str, Any]]) -> Tuple[List[int], np.ndarray, List[Dict[str, Any]]]:
+        """Select Pareto frontier candidates with grouped processing."""
+        if len(group_info) != data.shape[0]:
+            raise ValueError(f"Group info length ({len(group_info)}) doesn't match data rows ({data.shape[0]})")
+        
+        # Group data by group_info
+        groups = {}
+        for i, group_dict in enumerate(group_info):
+            group_key = tuple(sorted(group_dict.items()))
+            if group_key not in groups:
+                groups[group_key] = []
+            groups[group_key].append(i)
+        
+        self.logger.info(f"Processing {len(groups)} groups for Pareto selection")
+        
+        all_pareto_indices = []
+        all_pareto_values = []
+        group_metadata = []
+        
+        for group_key, indices in groups.items():
+            group_dict = dict(group_key)
+            self.logger.info(f"Processing group: {group_dict} ({len(indices)} candidates)")
+            
+            # Extract group data
+            group_data = data[indices]
+            group_tolerances = tolerances[indices] if tolerances.ndim == 2 else tolerances
+            
+            # Perform Pareto selection for this group
+            group_pareto_indices, group_pareto_values = self.select(group_data, group_tolerances)
+            
+            # Map back to original indices
+            original_pareto_indices = [indices[i] for i in group_pareto_indices]
+            
+            # Store results
+            all_pareto_indices.extend(original_pareto_indices)
+            all_pareto_values.extend(group_pareto_values)
+            
+            # Store group metadata
+            group_meta = {
+                'group': group_dict,
+                'total_candidates': len(indices),
+                'pareto_candidates': len(group_pareto_indices),
+                'reduction_ratio': len(group_pareto_indices) / len(indices),
+                'pareto_indices': original_pareto_indices
+            }
+            group_metadata.append(group_meta)
+        
+        # Combine all Pareto values
+        combined_pareto_values = np.array(all_pareto_values) if all_pareto_values else np.array([])
+        
+        self.logger.info(f"Grouped Pareto selection complete: {len(all_pareto_indices)} total candidates selected from {len(groups)} groups")
+        
+        return all_pareto_indices, combined_pareto_values, group_metadata 

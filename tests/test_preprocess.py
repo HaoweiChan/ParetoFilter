@@ -15,44 +15,73 @@ from pathlib import Path
 src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from src.preprocess import DataPreprocessor
+from preprocess import DataPreprocessor
 
 
 def generate_sample_run_data(n_rows: int = 1000) -> pd.DataFrame:
-    """Generate sample data for sample_run_1 with 3 variables."""
+    """Generate sample data matching the new CSV format with FP, STD, and multi-value variables."""
     
-    # Define column structure
-    single_value_cols = ['single_value_1', 'single_value_2']
-    multi_value_cols = ['multiple_value_1']  # Will have 10 values per row
+    np.random.seed(42)  # For reproducible results
     
-    # Generate single-value data
-    data = {}
+    # Generate groupby columns (FP and STD)
+    fp_values = ['FP1', 'FP2', 'FP3']
+    std_values = ['STD_A', 'STD_B', 'STD_C']
     
-    # Single-value variables with different distributions
-    data['single_value_1'] = np.random.normal(100, 20, n_rows)  # Normal distribution
-    data['single_value_2'] = np.random.exponential(50, n_rows)  # Exponential distribution
-    
-    # Multi-value variable with 10 conditions
-    for col in multi_value_cols:
-        # Generate base values
-        base_values = np.random.normal(50, 15, n_rows)
+    data = {
+        'FP': np.random.choice(fp_values, n_rows),
+        'STD': np.random.choice(std_values, n_rows),
         
-        # Create multi-value arrays with 10 conditions
-        multi_values = []
-        for i in range(n_rows):
-            # Add some variation across conditions
-            condition_values = []
-            for j in range(10):  # 10 conditions
-                condition_values.append(base_values[i] + np.random.normal(0, 5))
-            multi_values.append(condition_values)
+        # Single-value variables
+        'AREA': np.random.uniform(100, 1000, n_rows),
+        'OUT_CAP': np.random.uniform(10, 50, n_rows),
+        'LEAKAGE': np.random.uniform(1e-12, 1e-9, n_rows),
         
-        data[col] = multi_values
+        # Multi-value variables with IDX columns
+        'DYNAMIC_IDX1': [],
+        'DYNAMIC_IDX2': [],
+        'DYNAMIC': [],
+        'TRANSITION_IDX1': [],
+        'TRANSITION_IDX2': [],
+        'TRANSITION': [],
+        'DELAY_IDX1': [],
+        'DELAY_IDX2': [],
+        'DELAY': []
+    }
+    
+    # Generate multi-value data with list of lists format
+    for i in range(n_rows):
+        # DYNAMIC variable
+        dynamic_idx1 = [0.1, 0.2, 0.3, 0.4, 0.5]
+        dynamic_idx2 = [1.0, 2.0, 3.0, 4.0, 5.0]
+        dynamic_values = [[np.random.uniform(1, 10) for _ in range(4)] for _ in range(4)]
+        
+        data['DYNAMIC_IDX1'].append(dynamic_idx1)
+        data['DYNAMIC_IDX2'].append(dynamic_idx2)
+        data['DYNAMIC'].append(dynamic_values)
+        
+        # TRANSITION variable
+        transition_idx1 = [0.05, 0.1, 0.15, 0.2, 0.25]
+        transition_idx2 = [0.5, 1.0, 1.5, 2.0, 2.5]
+        transition_values = [[np.random.uniform(0.1, 2.0) for _ in range(4)] for _ in range(4)]
+        
+        data['TRANSITION_IDX1'].append(transition_idx1)
+        data['TRANSITION_IDX2'].append(transition_idx2)
+        data['TRANSITION'].append(transition_values)
+        
+        # DELAY variable
+        delay_idx1 = [10, 20, 30, 40, 50]
+        delay_idx2 = [100, 200, 300, 400, 500]
+        delay_values = [[np.random.uniform(5, 50) for _ in range(4)] for _ in range(4)]
+        
+        data['DELAY_IDX1'].append(delay_idx1)
+        data['DELAY_IDX2'].append(delay_idx2)
+        data['DELAY'].append(delay_values)
     
     return pd.DataFrame(data)
 
 
 def create_sample_run_config() -> dict:
-    """Create a configuration for sample_run_1 with 3 variables."""
+    """Create a configuration matching the new CSV format with groupby and IDX-based variables."""
     
     config = {
         'run': {
@@ -60,6 +89,7 @@ def create_sample_run_config() -> dict:
             'use_input_prefix': True,
             'output_processed_data': True
         },
+        'groupby_columns': ['FP', 'STD'],  # Enable groupby processing
         'visualization': {
             'generate_visualization': False,
             'dashboard_port': 8050,
@@ -67,38 +97,81 @@ def create_sample_run_config() -> dict:
         },
         'data': {
             # Single-value variables
-            'single_value_1': {
+            'AREA': {
                 'objective': 'minimize',
-                'variable': {
-                    'type': 'single'
-                },
-                'tolerance': {
-                    'type': 'absolute',
-                    'value': 2.0
-                }
-            },
-            'single_value_2': {
-                'objective': 'maximize',
                 'variable': {
                     'type': 'single'
                 },
                 'tolerance': {
                     'type': 'relative',
-                    'value': 0.05  # 5% relative tolerance
+                    'value': 0.05
                 }
             },
-            
-            # Multi-value variable with 10 conditions
-            'multiple_value_1': {
-                'objective': 'minimize',
+            'OUT_CAP': {
+                'objective': 'maximize',
                 'variable': {
-                    'type': 'multi',
-                    'selection_strategy': 'index',
-                    'selection_value': 0  # Use first condition
+                    'type': 'single'
                 },
                 'tolerance': {
                     'type': 'absolute',
-                    'value': 1.5
+                    'value': 1.0
+                }
+            },
+            'LEAKAGE': {
+                'objective': 'minimize',
+                'variable': {
+                    'type': 'single'
+                },
+                'tolerance': {
+                    'type': 'relative',
+                    'value': 0.1
+                }
+            },
+            
+            # Multi-value variables with IDX-based selection
+            'DYNAMIC': {
+                'objective': 'minimize',
+                'variable': {
+                    'type': 'multi',
+                    'selection_strategy': 'idx_based',
+                    'idx1_values': [0.1, 0.2, 0.3, 0.4, 0.5],
+                    'idx2_values': [1.0, 2.0, 3.0, 4.0, 5.0],
+                    'selected_idx1': 0.25,
+                    'selected_idx2': 2.5
+                },
+                'tolerance': {
+                    'type': 'relative',
+                    'value': 0.15
+                }
+            },
+            'TRANSITION': {
+                'objective': 'minimize',
+                'variable': {
+                    'type': 'multi',
+                    'selection_strategy': 'idx_based',
+                    'idx1_values': [0.05, 0.1, 0.15, 0.2, 0.25],
+                    'idx2_values': [0.5, 1.0, 1.5, 2.0, 2.5],
+                    'selected_idx1': 0.12,
+                    'selected_idx2': 1.2
+                },
+                'tolerance': {
+                    'type': 'absolute',
+                    'value': 0.5
+                }
+            },
+            'DELAY': {
+                'objective': 'minimize',
+                'variable': {
+                    'type': 'multi',
+                    'selection_strategy': 'idx_based',
+                    'idx1_values': [10, 20, 30, 40, 50],
+                    'idx2_values': [100, 200, 300, 400, 500],
+                    'selected_idx1': 25,
+                    'selected_idx2': 250
+                },
+                'tolerance': {
+                    'type': 'relative',
+                    'value': 0.1
                 }
             }
         }
@@ -112,10 +185,20 @@ def save_sample_run_files(data: pd.DataFrame, config: dict, output_dir: str = "r
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Clean up multi-value columns for CSV
+    # Clean up multi-value columns for CSV (convert lists to string representation)
     df = data.copy()
-    if 'multiple_value_1' in df.columns:
-        df['multiple_value_1'] = df['multiple_value_1'].apply(lambda arr: '[' + ', '.join(f'{float(x):.8f}' for x in arr) + ']')
+    
+    # Convert multi-value columns to string representation
+    multi_value_columns = ['DYNAMIC', 'TRANSITION', 'DELAY']
+    idx_columns = ['DYNAMIC_IDX1', 'DYNAMIC_IDX2', 'TRANSITION_IDX1', 'TRANSITION_IDX2', 'DELAY_IDX1', 'DELAY_IDX2']
+    
+    for col in multi_value_columns:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: str(x))
+    
+    for col in idx_columns:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: str(x))
     
     # Save sample data
     data_path = output_path / "sample_data.csv"
@@ -150,6 +233,19 @@ def test_sample_run_preprocessing(data_path: str, config: dict):
     print(f"- Processed data shape: {processed_data.shape}")
     print(f"- Tolerance array shape: {tolerances.shape}")
     
+    # Show group information if available
+    if hasattr(preprocessor, 'group_info') and preprocessor.group_info:
+        print(f"- Group info available: {len(preprocessor.group_info)} entries")
+        groups = {}
+        for group in preprocessor.group_info:
+            key = tuple(sorted(group.items()))
+            groups[key] = groups.get(key, 0) + 1
+        
+        print("\nGroups found:")
+        for group_key, count in groups.items():
+            group_dict = dict(group_key)
+            print(f"  {group_dict}: {count} candidates")
+    
     # Show feature statistics
     variables_section = config.get('data', config.get('variables', {}))
     feature_names = list(variables_section.keys())
@@ -177,11 +273,19 @@ def main():
     
     # Show data info
     print(f"\nData columns:")
+    single_value_cols = ['AREA', 'OUT_CAP', 'LEAKAGE']
+    multi_value_cols = ['DYNAMIC', 'TRANSITION', 'DELAY']
+    groupby_cols = ['FP', 'STD']
+    
     for col in sample_data.columns:
-        if col.startswith('single_value'):
+        if col in groupby_cols:
+            print(f"- {col}: groupby column")
+        elif col in single_value_cols:
             print(f"- {col}: single-value variable")
-        else:
-            print(f"- {col}: multi-value variable (10 conditions)")
+        elif col in multi_value_cols:
+            print(f"- {col}: multi-value variable (list of lists)")
+        elif col.endswith('_IDX1') or col.endswith('_IDX2'):
+            print(f"- {col}: index column for multi-value variable")
     
     # Create sample configuration
     sample_config = create_sample_run_config()

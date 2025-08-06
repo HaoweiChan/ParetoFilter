@@ -79,8 +79,8 @@ class Dashboard:
                 
                 # Plot area
                 html.Div([
-                    dcc.Graph(id='pareto-plot', style={'width': '100vw', 'height': '100vh'})
-                ], style={'width': '75vw', 'display': 'inline-block', 'height': '100vh', 'verticalAlign': 'top'})
+                    dcc.Graph(id='pareto-plot', style={'width': '100%', 'height': '100vh'})
+                ], style={'width': '75%', 'display': 'inline-block', 'height': '100vh', 'verticalAlign': 'top'})
             ]),
             
             # Statistics panel
@@ -218,6 +218,7 @@ class Dashboard:
         layout_args = dict(
             title=f"Pareto Frontier: {x_feature} vs {y_feature}" + (f" vs {z_feature}" if is_3d else ''),
             autosize=True,
+            render_mode='svg'
         )
         if is_3d:
             layout_args['scene'] = dict(

@@ -146,8 +146,17 @@ Examples:
         # Perform Pareto selection
         logger.info("Performing Pareto frontier selection")
         selector = ParetoSelector(config)
-        pareto_indices, pareto_values = selector.select(processed_data, tolerances)
-        logger.info(f"Pareto frontier selected: {len(pareto_indices)} candidates")
+        
+        # Check if we have group information for grouped Pareto selection
+        if hasattr(preprocessor, 'group_info') and preprocessor.group_info:
+            logger.info("Using grouped Pareto selection")
+            pareto_indices, pareto_values, group_metadata = selector.select_grouped(processed_data, tolerances, preprocessor.group_info)
+            logger.info(f"Grouped Pareto frontier selected: {len(pareto_indices)} candidates from {len(group_metadata)} groups")
+        else:
+            logger.info("Using standard Pareto selection")
+            pareto_indices, pareto_values = selector.select(processed_data, tolerances)
+            group_metadata = None
+            logger.info(f"Pareto frontier selected: {len(pareto_indices)} candidates")
         
         # Save vis_data.npz for dashboard-only mode
         vis_data_path = run_dir / "vis_data.npz"
@@ -168,6 +177,17 @@ Examples:
             'pareto_candidates': len(pareto_indices),
             'feature_names': list(variables_section.keys())
         }
+        
+        # Add group metadata if available
+        if group_metadata:
+            results['grouped_results'] = group_metadata
+            results['groupby_columns'] = config.get('groupby_columns', [])
+            
+            # Log group-specific results
+            for group_meta in group_metadata:
+                group_name = ', '.join([f"{k}={v}" for k, v in group_meta['group'].items()])
+                logger.info(f"Group [{group_name}]: {group_meta['pareto_candidates']}/{group_meta['total_candidates']} candidates selected (reduction: {group_meta['reduction_ratio']:.1%})")
+        
         save_results(results, pareto_output_path, 'csv')
         
         # Launch dashboard if requested
