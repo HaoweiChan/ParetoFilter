@@ -102,6 +102,57 @@ data:
 - **Multi-value variables**: Shape (N, K) - requires selection strategy
   - Index selection: use i-th condition (0-based indexing)
   - Percentile selection: use specified percentile (0-100)
+  - **IDX-based selection**: use IDX1/IDX2 bin values to select from list of lists
+
+### Folder-Based Data Loading
+
+The tool now supports loading multiple CSV files from a folder:
+
+```yaml
+run:
+  input_file: /path/to/csv/folder  # Folder containing multiple CSV files
+```
+
+All CSV files in the folder will be automatically loaded and concatenated into a single DataFrame.
+
+### Groupby Processing
+
+Process data in groups based on categorical columns (e.g., FP, STD):
+
+```yaml
+groupby_columns:
+  - FP
+  - STD
+```
+
+Pareto frontier selection will be performed separately for each unique combination of groupby column values.
+
+### IDX-Based Multi-Value Variables
+
+For multi-value variables stored as list of lists with corresponding IDX columns:
+
+```yaml
+data:
+  DYNAMIC:  # Multi-value variable
+    objective: minimize
+    variable:
+      type: multi
+      selection_strategy: idx_based
+      idx1_values: [0.1, 0.2, 0.3, 0.4, 0.5]  # Bin edges for DYNAMIC_IDX1
+      idx2_values: [1.0, 2.0, 3.0, 4.0, 5.0]  # Bin edges for DYNAMIC_IDX2
+      selected_idx1: 0.25  # Value to find bin for
+      selected_idx2: 2.5   # Value to find bin for
+    tolerance:
+      type: relative
+      value: 0.15
+```
+
+Expected CSV columns:
+- `DYNAMIC`: List of lists containing the actual values
+- `DYNAMIC_IDX1`: List of bin edge values for first dimension
+- `DYNAMIC_IDX2`: List of bin edge values for second dimension
+
+The tool will find the appropriate bin indices and extract `DYNAMIC[i][j]` where `i` and `j` are determined by the bin locations of `selected_idx1` and `selected_idx2`.
 
 ## Dashboard Features
 
