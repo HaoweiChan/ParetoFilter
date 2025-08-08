@@ -7,19 +7,19 @@ Provides CLI interface for data processing, Pareto selection, and visualization.
 
 import os
 import sys
-import argparse
-import logging
-from pathlib import Path
-# Add src directory to Python path
-src_path = Path(__file__).parent / "src"
-sys.path.insert(0, str(src_path))
-
 import yaml
+import logging
+import argparse
 import numpy as np
+from pathlib import Path
+
+# Add src directory to Python path (before importing local modules)
+src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+sys.path.insert(0, src_path)
 
 from pareto import ParetoSelector
-from visualization import Dashboard
 from preprocess import DataPreprocessor
+from visualization import Dashboard
 from utils import load_config, validate_config, setup_logging, save_results, create_run_directory
 
 
@@ -85,15 +85,15 @@ Examples:
         run_config = config.get('run', {})
         viz_config = config.get('visualization', {})
         
-        # Determine input file path
-        input_file = run_config.get('input_file')
-        if not input_file:
-            raise ValueError("Configuration must specify 'input_file' in the 'run' section")
+        # Determine input directory path (support both old and new config format)
+        input_dir = run_config.get('input_dir') or run_config.get('input_file')
+        if not input_dir:
+            raise ValueError("Configuration must specify 'input_dir' in the 'run' section")
         
-        # Determine config directory and data file path
+        # Determine config directory and data path
         config_path = Path(args.config)
         config_dir = config_path.parent
-        data_path = config_dir / input_file
+        data_path = config_dir / input_dir
         
         if not data_path.exists():
             raise FileNotFoundError(f"Data file not found: {data_path}")
@@ -127,7 +127,7 @@ Examples:
         output_processed_data = run_config.get('output_processed_data', False)
         
         # Generate output filenames
-        input_stem = Path(input_file).stem if use_input_prefix else None
+        input_stem = Path(input_dir).stem if use_input_prefix else None
         
         # Save processed data if requested
         if args.processed_output or output_processed_data:
@@ -177,6 +177,10 @@ Examples:
             'pareto_candidates': len(pareto_indices),
             'feature_names': list(variables_section.keys())
         }
+        
+        # Add idx values if available from preprocessor
+        if hasattr(preprocessor, 'idx_values') and preprocessor.idx_values:
+            results['idx_values'] = preprocessor.idx_values
         
         # Add group metadata if available
         if group_metadata:

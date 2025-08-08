@@ -7,8 +7,8 @@ Common functions for configuration handling, validation, and logging.
 import sys
 import json
 import logging
-from pathlib import Path
 from typing import Dict, Any
+from pathlib import Path
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -82,25 +82,28 @@ def validate_config(config: Dict[str, Any]) -> None:
                 raise ValueError(f"Multi-value variable '{var_name}' missing selection_strategy")
             
             strategy = variable_config['selection_strategy']
-            if strategy not in ['index', 'percentile', 'idx_based']:
+            if strategy not in ['index', 'value']:
                 raise ValueError(f"Variable '{var_name}' has invalid selection_strategy: {strategy}")
-            
-            if strategy == 'idx_based':
-                # Validate idx_based strategy fields
-                required_idx_fields = ['idx1_values', 'idx2_values', 'selected_idx1', 'selected_idx2']
-                for field in required_idx_fields:
-                    if field not in variable_config:
-                        raise ValueError(f"IDX-based variable '{var_name}' missing required field: {field}")
-            else:
-                # Validate legacy strategies (index, percentile)
-                if 'selection_value' not in variable_config:
-                    raise ValueError(f"Multi-value variable '{var_name}' missing selection_value")
-                
-                value = variable_config['selection_value']
-                if strategy == 'index' and (not isinstance(value, int) or value < 0):
-                    raise ValueError(f"Variable '{var_name}' index must be non-negative integer")
-                if strategy == 'percentile' and (not isinstance(value, (int, float)) or value < 0 or value > 100):
-                    raise ValueError(f"Variable '{var_name}' percentile must be between 0 and 100")
+
+            # Both strategies require idx1_value and idx2_value
+            required_fields = ['idx1_value', 'idx2_value']
+            for field in required_fields:
+                if field not in variable_config:
+                    raise ValueError(f"Multi-value variable '{var_name}' missing required field: {field}")
+
+            idx1_value = variable_config['idx1_value']
+            idx2_value = variable_config['idx2_value']
+
+            if strategy == 'index':
+                if not isinstance(idx1_value, int) or idx1_value < 0:
+                    raise ValueError(f"Variable '{var_name}' idx1_value must be non-negative integer for index strategy")
+                if not isinstance(idx2_value, int) or idx2_value < 0:
+                    raise ValueError(f"Variable '{var_name}' idx2_value must be non-negative integer for index strategy")
+            else:  # value
+                if not isinstance(idx1_value, (int, float)):
+                    raise ValueError(f"Variable '{var_name}' idx1_value must be numeric for value strategy")
+                if not isinstance(idx2_value, (int, float)):
+                    raise ValueError(f"Variable '{var_name}' idx2_value must be numeric for value strategy")
 
 
 def setup_logging(verbose: bool = False, log_file: str = None) -> None:
@@ -139,6 +142,17 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
             df_data = {'candidate_index': pareto_indices}
             for i, feature_name in enumerate(feature_names):
                 df_data[feature_name] = pareto_values[:, i]
+            
+            # Add idx values for multi-value variables if available
+            if 'idx_values' in data:
+                idx_values = data['idx_values']
+                for var_name, idx_data in idx_values.items():
+                    if 'idx1' in idx_data and 'idx2' in idx_data:
+                        # Get idx values for the selected Pareto candidates
+                        idx1_vals = idx_data['idx1'][pareto_indices]
+                        idx2_vals = idx_data['idx2'][pareto_indices]
+                        df_data[f'{var_name}_IDX1_value'] = idx1_vals
+                        df_data[f'{var_name}_IDX2_value'] = idx2_vals
             
             # Add metadata as separate rows or in a comment
             df = pd.DataFrame(df_data)

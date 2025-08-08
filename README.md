@@ -89,8 +89,10 @@ data:
     variable:
       type: "single" | "multi"
       # For multi-value variables:
-      selection_strategy: "index" | "percentile"
-      selection_value: int | float  # index or percentile value
+      selection_strategy: "index" | "value"
+      # index: use integer bin indices; value: use numeric values to locate bins
+      idx1_value: int | float
+      idx2_value: int | float
     tolerance:
       type: "absolute" | "relative"
       value: float
@@ -100,9 +102,8 @@ data:
 
 - **Single-value variables**: Shape (N,) - direct tolerance application
 - **Multi-value variables**: Shape (N, K) - requires selection strategy
-  - Index selection: use i-th condition (0-based indexing)
-  - Percentile selection: use specified percentile (0-100)
-  - **IDX-based selection**: use IDX1/IDX2 bin values to select from list of lists
+  - Index selection: use integer bin indices (0-based) over IDX1/IDX2
+  - Value selection: use numeric values to find bins in IDX1/IDX2 and select from list of lists
 
 ### Folder-Based Data Loading
 
@@ -137,11 +138,9 @@ data:
     objective: minimize
     variable:
       type: multi
-      selection_strategy: idx_based
-      idx1_values: [0.1, 0.2, 0.3, 0.4, 0.5]  # Bin edges for DYNAMIC_IDX1
-      idx2_values: [1.0, 2.0, 3.0, 4.0, 5.0]  # Bin edges for DYNAMIC_IDX2
-      selected_idx1: 0.25  # Value to find bin for
-      selected_idx2: 2.5   # Value to find bin for
+      selection_strategy: value
+      idx1_value: 0.25
+      idx2_value: 2.5
     tolerance:
       type: relative
       value: 0.15

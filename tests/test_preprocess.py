@@ -128,16 +128,14 @@ def create_sample_run_config() -> dict:
                 }
             },
             
-            # Multi-value variables with IDX-based selection
+            # Multi-value variables with simplified selection strategies
             'DYNAMIC': {
                 'objective': 'minimize',
                 'variable': {
                     'type': 'multi',
-                    'selection_strategy': 'idx_based',
-                    'idx1_values': [0.1, 0.2, 0.3, 0.4, 0.5],
-                    'idx2_values': [1.0, 2.0, 3.0, 4.0, 5.0],
-                    'selected_idx1': 0.25,
-                    'selected_idx2': 2.5
+                    'selection_strategy': 'index',
+                    'idx1_value': 1,
+                    'idx2_value': 2
                 },
                 'tolerance': {
                     'type': 'relative',
@@ -148,11 +146,9 @@ def create_sample_run_config() -> dict:
                 'objective': 'minimize',
                 'variable': {
                     'type': 'multi',
-                    'selection_strategy': 'idx_based',
-                    'idx1_values': [0.05, 0.1, 0.15, 0.2, 0.25],
-                    'idx2_values': [0.5, 1.0, 1.5, 2.0, 2.5],
-                    'selected_idx1': 0.12,
-                    'selected_idx2': 1.2
+                    'selection_strategy': 'value',
+                    'idx1_value': 0.12,
+                    'idx2_value': 1.2
                 },
                 'tolerance': {
                     'type': 'absolute',
@@ -163,11 +159,9 @@ def create_sample_run_config() -> dict:
                 'objective': 'minimize',
                 'variable': {
                     'type': 'multi',
-                    'selection_strategy': 'idx_based',
-                    'idx1_values': [10, 20, 30, 40, 50],
-                    'idx2_values': [100, 200, 300, 400, 500],
-                    'selected_idx1': 25,
-                    'selected_idx2': 250
+                    'selection_strategy': 'value',
+                    'idx1_value': 25,
+                    'idx2_value': 250
                 },
                 'tolerance': {
                     'type': 'relative',

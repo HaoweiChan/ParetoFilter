@@ -6,11 +6,11 @@ Handles data loading, multi-value variable processing, and tolerance computation
 
 import re
 import ast
-import logging
 import numpy as np
 import pandas as pd
+import logging
+from typing import Any, Dict, List, Tuple, Union
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
 
 
 class DataPreprocessor:
@@ -95,7 +95,7 @@ class DataPreprocessor:
         # Check for IDX columns for multi-value variables
         for var_name, var_config in self.variable_configs.items():
             variable_config = var_config.get('variable', var_config)
-            if variable_config.get('type') == 'multi' and variable_config.get('selection_strategy') == 'idx_based':
+            if variable_config.get('type') == 'multi' and variable_config.get('selection_strategy') in ['index', 'value']:
                 idx1_col = f"{var_name}_IDX1"
                 idx2_col = f"{var_name}_IDX2"
                 if idx1_col not in data.columns:
@@ -111,59 +111,31 @@ class DataPreprocessor:
                 self.logger.warning(f"Found NaN values: {nan_counts[nan_counts > 0].to_dict()}")
     
     def process_multi_value_variable(self, data: pd.DataFrame, var_name: str, 
-                                   var_config: Dict[str, Any]) -> np.ndarray:
-        """Process multi-value variable using specified selection strategy."""
+                                   var_config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process multi-value variable using 'index' or 'value' strategy.
+        
+        Returns tuple: (variable_values, idx1_values, idx2_values)
+        """
         variable_config = var_config.get('variable', var_config)  # Handle both old and new structure
         strategy = variable_config['selection_strategy']
-        
-        if strategy == 'idx_based':
-            return self._process_idx_based_variable(data, var_name, var_config)
-        
-        # Handle legacy strategies
-        value = variable_config['selection_value']
-        
-        # Get the multi-value data
-        var_data = data[var_name].values
-        
-        # Handle different data formats
-        if isinstance(var_data[0], (list, np.ndarray)):
-            # Data is already in list/array format
-            var_array = np.array([np.array(x) if isinstance(x, list) else x for x in var_data])
-        else:
-            # Data might be string representation of arrays
-            try:
-                var_array = np.array([eval(x) if isinstance(x, str) else x for x in var_data])
-            except:
-                raise ValueError(f"Unable to parse multi-value data for variable {var_name}")
-        
-        if strategy == 'index':
-            if value >= var_array.shape[1]:
-                raise ValueError(f"Index {value} out of bounds for variable {var_name} (max: {var_array.shape[1]-1})")
-            return var_array[:, value]
-        
-        elif strategy == 'percentile':
-            if not (0 <= value <= 100):
-                raise ValueError(f"Percentile {value} must be between 0 and 100")
-            
-            # Compute percentile across all conditions for each candidate
-            percentiles = np.percentile(var_array, value, axis=1)
-            return percentiles
-        
-        else:
-            raise ValueError(f"Unknown selection strategy: {strategy}")
+        if strategy in ['index', 'value']:
+            return self._process_index_value_variable(data, var_name, var_config)
+        raise ValueError(f"Unknown selection strategy: {strategy}")
     
-    def _process_idx_based_variable(self, data: pd.DataFrame, var_name: str, 
-                                  var_config: Dict[str, Any]) -> np.ndarray:
-        """Process multi-value variable using IDX1/IDX2-based selection."""
+    def _process_index_value_variable(self, data: pd.DataFrame, var_name: str, 
+                                      var_config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Process multi-value variable using index (integer) or value (bin) selection over IDX1/IDX2 grids.
+        
+        Returns tuple: (variable_values, idx1_values, idx2_values)
+        """
         variable_config = var_config.get('variable', var_config)
+        strategy = variable_config['selection_strategy']
         
         # Get IDX values and configuration
         idx1_col = f"{var_name}_IDX1"
         idx2_col = f"{var_name}_IDX2"
-        idx1_values = variable_config['idx1_values']
-        idx2_values = variable_config['idx2_values']
-        selected_idx1 = variable_config['selected_idx1']
-        selected_idx2 = variable_config['selected_idx2']
+        idx1_value = variable_config['idx1_value']
+        idx2_value = variable_config['idx2_value']
         
         # Get the multi-value data as list of lists
         var_data = data[var_name].values
@@ -216,19 +188,38 @@ class DataPreprocessor:
         
         # Process each row to extract the correct value
         results = []
+        idx1_results = []
+        idx2_results = []
+        
         for i in range(len(var_data)):
-            # Find the bin indices for the selected values
-            i_bin = self._find_bin_index(selected_idx1, idx1_data[i])
-            j_bin = self._find_bin_index(selected_idx2, idx2_data[i])
+            if strategy == 'index':
+                # Use direct indices
+                i_bin = int(idx1_value)
+                j_bin = int(idx2_value)
+                
+                # Get the actual idx1/idx2 values at these indices
+                actual_idx1 = idx1_data[i][i_bin] if isinstance(idx1_data[i], list) else idx1_data[i]
+                actual_idx2 = idx2_data[i][j_bin] if isinstance(idx2_data[i], list) else idx2_data[i]
+                
+            else:  # value
+                # Find the bin indices for the selected values
+                i_bin = self._find_bin_index(idx1_value, idx1_data[i])
+                j_bin = self._find_bin_index(idx2_value, idx2_data[i])
+                
+                # The actual values are the ones we're looking for
+                actual_idx1 = idx1_value
+                actual_idx2 = idx2_value
             
             # Extract value from the list of lists
             try:
                 value = var_data[i][i_bin][j_bin]
                 results.append(value)
+                idx1_results.append(actual_idx1)
+                idx2_results.append(actual_idx2)
             except (IndexError, TypeError):
                 raise ValueError(f"Unable to extract value at indices [{i_bin}][{j_bin}] for variable {var_name}, row {i}")
         
-        return np.array(results)
+        return np.array(results), np.array(idx1_results), np.array(idx2_results)
     
     def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
         """Find the bin index for a selected value given bin edges."""
@@ -253,7 +244,11 @@ class DataPreprocessor:
             var_data = data[var_name].values
         else:
             # For multi-value variables, use the processed single value
-            var_data = self.process_multi_value_variable(data, var_name, var_config)
+            result = self.process_multi_value_variable(data, var_name, var_config)
+            if isinstance(result, tuple):  # index/value returns tuple
+                var_data = result[0]
+            else:  # legacy strategies return array directly
+                var_data = result
         
         if tolerance_type == 'absolute':
             return np.full_like(var_data, tolerance_value, dtype=float)
@@ -296,6 +291,9 @@ class DataPreprocessor:
         all_tolerance_values = []
         group_info = []
         
+        # Initialize combined idx_values storage
+        combined_idx_values = {}
+        
         for group_key, group_data in grouped:
             self.logger.info(f"Processing group: {group_key} ({len(group_data)} rows)")
             
@@ -308,6 +306,14 @@ class DataPreprocessor:
             
             all_processed_features.append(group_features)
             all_tolerance_values.append(group_tolerances)
+            
+            # Collect idx_values from this group
+            if hasattr(self, 'idx_values') and self.idx_values:
+                for var_name, idx_data in self.idx_values.items():
+                    if var_name not in combined_idx_values:
+                        combined_idx_values[var_name] = {'idx1': [], 'idx2': []}
+                    combined_idx_values[var_name]['idx1'].extend(idx_data['idx1'])
+                    combined_idx_values[var_name]['idx2'].extend(idx_data['idx2'])
         
         # Combine all groups
         if all_processed_features:
@@ -315,6 +321,13 @@ class DataPreprocessor:
             tolerance_array = np.vstack(all_tolerance_values)
         else:
             raise ValueError("No data processed from any group")
+        
+        # Convert combined idx_values to numpy arrays
+        if combined_idx_values:
+            for var_name in combined_idx_values:
+                combined_idx_values[var_name]['idx1'] = np.array(combined_idx_values[var_name]['idx1'])
+                combined_idx_values[var_name]['idx2'] = np.array(combined_idx_values[var_name]['idx2'])
+            self.idx_values = combined_idx_values
         
         # Store group information for later use
         self.group_info = group_info
@@ -328,6 +341,10 @@ class DataPreprocessor:
         tolerance_values = []
         feature_names = []
         
+        # Store idx values for multi-value variables
+        if not hasattr(self, 'idx_values'):
+            self.idx_values = {}
+        
         # Process each variable according to configuration
         for var_name, var_config in self.variable_configs.items():
             self.logger.debug(f"Processing variable: {var_name}")
@@ -340,7 +357,15 @@ class DataPreprocessor:
                 tolerance_data = self.compute_tolerance(data, var_name, var_config)
             else:
                 # Multi-value variable: process to single value
-                feature_data = self.process_multi_value_variable(data, var_name, var_config)
+                if variable_config.get('selection_strategy') in ['index', 'value']:
+                    feature_data, idx1_vals, idx2_vals = self.process_multi_value_variable(data, var_name, var_config)
+                    # Store idx values for later use in results
+                    self.idx_values[var_name] = {
+                        'idx1': idx1_vals,
+                        'idx2': idx2_vals
+                    }
+                else:
+                    feature_data, _, _ = self.process_multi_value_variable(data, var_name, var_config)
                 tolerance_data = self.compute_tolerance(data, var_name, var_config)
             
             # Validate processed data
