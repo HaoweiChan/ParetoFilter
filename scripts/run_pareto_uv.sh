@@ -1,45 +1,29 @@
-#!/usr/bin/env bash
+#!/bin/tcsh
 
-set -euo pipefail
+# Prepare uv-based environment using tcsh script
+if ( -f scripts/setup_uv.sh ) then
+    source scripts/setup_uv.sh
+else
+    echo "✗ scripts/setup_uv.sh not found. Please run from repo root or install uv manually."
+    exit 1
+endif
 
-REPO_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT_DIR"
+######################################################### USER UPDATE #########################################################
+# Configure user settings file here
+set config = "runs/sample_run_1/config.yaml"
 
-CONFIG_PATH=""
-EXTRA_ARGS=()
+# Check if user config file exists
+if ( ! -f "$config" ) then
+    echo "✗ User config file not found: $config"
+    echo "Please create the file or update the config variable in this script."
+    exit 1
+endif
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --config=*)
-      CONFIG_PATH="${1#*=}"
-      shift
-      ;;
-    --config)
-      shift
-      CONFIG_PATH="$1"
-      shift
-      ;;
-    *)
-      EXTRA_ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
+echo "Reading run settings from: $config"
 
-if [[ -z "$CONFIG_PATH" ]]; then
-  CONFIG_PATH="runs/sample_run_1/config.yaml"
-fi
+# Build uv command with user config
+set python_cmd = "env UV_PROJECT_ENVIRONMENT=.venv uv run python main.py --config $config"
 
-if [[ ! -f "$CONFIG_PATH" ]]; then
-  echo "✗ Config file not found: $CONFIG_PATH"
-  exit 1
-fi
+######################################################### USER UPDATE #########################################################
 
-# Ensure environment is prepared
-"$REPO_ROOT_DIR/scripts/setup_uv.sh"
-
-echo "Running ParetoFilter with config: $CONFIG_PATH"
-UV_PROJECT_ENVIRONMENT=".venv" uv run python main.py --config "$CONFIG_PATH" "${EXTRA_ARGS[@]}"
-
-
-
+eval $python_cmd
