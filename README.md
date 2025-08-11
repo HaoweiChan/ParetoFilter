@@ -12,8 +12,20 @@ A Python tool for multi-dimensional Pareto frontier selection with tolerance han
 
 ## Installation
 
+Preferred: uv (fast Python package manager)
+
 1. Clone the repository
-2. Install dependencies:
+2. Install `uv` and sync the environment:
+```bash
+# One-time: install uv (macOS/Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Prepare local .venv and install deps from pyproject.toml
+scripts/setup_uv.sh
+```
+
+Alternative: pip
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -22,11 +34,22 @@ pip install -r requirements.txt
 
 1. **Install dependencies**:
    ```bash
+   # Using uv (recommended)
+   scripts/setup_uv.sh
+
+   # Or with pip
    pip install -r requirements.txt
    ```
 
 2. **Run with sample data**:
    ```bash
+   # Using uv
+   uv run python main.py --config runs/sample_run_1/config.yaml
+
+   # Or via helper script
+   scripts/run_pareto_uv.sh --config runs/sample_run_1/config.yaml
+
+   # Using system/python directly
    python main.py --config runs/sample_run_1/config.yaml
    ```
 
@@ -38,6 +61,10 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
+# Using uv
+uv run python main.py --config CONFIG_FILE [OPTIONS]
+
+# Or directly
 python main.py --config CONFIG_FILE [OPTIONS]
 ```
 

@@ -1,0 +1,23 @@
+[project]
+name = "paretofilter"
+version = "0.1.0"
+description = "Pareto Frontier Selection Tool with grouped processing and interactive visualization"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "platypus-opt>=1.0.4",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "plotly>=5.15.0",
+    "dash>=2.14.0",
+    "pyyaml>=6.0",
+    "json5>=0.9.14",
+    "pyarrow>=12.0.0",
+    "scipy>=1.10.0",
+]
+
+[tool.uv]
+# uv will honor [project] and create/use .venv by default when running `uv sync`
+
+
+
