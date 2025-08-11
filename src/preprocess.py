@@ -267,6 +267,7 @@ class DataPreprocessor:
         """Process data and return processed features and tolerances."""
         # Load and validate data
         data = self.load_data(data_path)
+        data.rename(columns={'DYNAMIN_IDX2': 'DYNAMIC_IDX2'}, inplace=True)
         self.validate_data(data)
         
         # Check if groupby processing is enabled
