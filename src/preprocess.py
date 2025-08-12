@@ -437,24 +437,35 @@ class DataPreprocessor:
         
         for group_key, group_data in grouped:
             self.logger.info(f"Processing group: {group_key} ({len(group_data)} rows)")
-            
-            # Process this group
-            group_features, group_tolerances = self._process_single_group(group_data)
-            
-            # Store group information
             group_dict = dict(zip(groupby_columns, group_key if isinstance(group_key, tuple) else [group_key]))
+            try:
+                # Process this group
+                group_features, group_tolerances = self._process_single_group(group_data)
+            except Exception as e:
+                self.logger.warning(f"Skipping group {group_dict} due to processing error: {e}")
+                continue
+
+            # Store group information
             group_info.extend([group_dict] * len(group_features))
-            
             all_processed_features.append(group_features)
             all_tolerance_values.append(group_tolerances)
             
-            # Collect idx_values from this group
+            # Collect idx_values from this group safely
             if hasattr(self, 'idx_values') and self.idx_values:
                 for var_name, idx_data in self.idx_values.items():
-                    if var_name not in combined_idx_values:
-                        combined_idx_values[var_name] = {'idx1': [], 'idx2': []}
-                    combined_idx_values[var_name]['idx1'].extend(idx_data['idx1'])
-                    combined_idx_values[var_name]['idx2'].extend(idx_data['idx2'])
+                    try:
+                        idx1_vals = np.asarray(idx_data['idx1'])
+                        idx2_vals = np.asarray(idx_data['idx2'])
+                        if idx1_vals.ndim != 1 or idx2_vals.ndim != 1:
+                            raise ValueError(f"inhomogeneous idx shapes: idx1.ndim={idx1_vals.ndim}, idx2.ndim={idx2_vals.ndim}")
+                        if var_name not in combined_idx_values:
+                            combined_idx_values[var_name] = {'idx1': [], 'idx2': []}
+                        combined_idx_values[var_name]['idx1'].extend(idx1_vals.tolist())
+                        combined_idx_values[var_name]['idx2'].extend(idx2_vals.tolist())
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Skipping idx values for group {group_dict}, variable {var_name} due to shape inconsistency: {e}"
+                        )
         
         # Combine all groups
         if all_processed_features:
@@ -465,10 +476,18 @@ class DataPreprocessor:
         
         # Convert combined idx_values to numpy arrays
         if combined_idx_values:
+            sanitized_idx_values = {}
             for var_name in combined_idx_values:
-                combined_idx_values[var_name]['idx1'] = np.array(combined_idx_values[var_name]['idx1'])
-                combined_idx_values[var_name]['idx2'] = np.array(combined_idx_values[var_name]['idx2'])
-            self.idx_values = combined_idx_values
+                try:
+                    idx1_arr = np.array(combined_idx_values[var_name]['idx1'], dtype=float)
+                    idx2_arr = np.array(combined_idx_values[var_name]['idx2'], dtype=float)
+                    sanitized_idx_values[var_name] = {'idx1': idx1_arr, 'idx2': idx2_arr}
+                except Exception as e:
+                    self.logger.warning(
+                        f"Skipping aggregated idx values for variable {var_name} due to inhomogeneous shapes: {e}"
+                    )
+            if sanitized_idx_values:
+                self.idx_values = sanitized_idx_values
         
         # Store group information for later use
         self.group_info = group_info
