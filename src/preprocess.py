@@ -101,7 +101,8 @@ class DataPreprocessor:
                 if idx1_col not in data.columns:
                     raise ValueError(f"Missing IDX1 column for multi-value variable {var_name}: {idx1_col}")
                 if idx2_col not in data.columns:
-                    raise ValueError(f"Missing IDX2 column for multi-value variable {var_name}: {idx2_col}")
+                    # Allow 1D variables which only have IDX1; downstream logic will ignore IDX2
+                    self.logger.warning(f"IDX2 column not found for {var_name} ({idx2_col}). Assuming 1D variable.")
         
         # Check for NaN values
         check_columns = list(self.variable_configs.keys())
@@ -130,6 +131,9 @@ class DataPreprocessor:
         # Normalize whitespace separated numbers and bracket boundaries
         s = re.sub(r'(\d)\s+(\d)', r'\1, \2', s)
         s = re.sub(r'\]\s+\[', r'], [', s)
+        # Insert commas between adjacent numbers separated by whitespace
+        s = re.sub(r'(?<=\d)\s+(?=[\d\-\.])', ', ', s)
+        # Normalize remaining spaces to commas (handles mixed formatting)
         s = s.replace(' ', ', ')
         s = re.sub(r',,', ',', s)
 
@@ -137,6 +141,9 @@ class DataPreprocessor:
             s = '[' + s
         if not s.endswith(']'):
             s = s + ']'
+        # If there are multiple top-level lists like "[...], [...]" ensure an outer wrapper
+        if s.count('[') > 1 and not s.strip().startswith('[['):
+            s = '[' + s + ']'
 
         try:
             return ast.literal_eval(s)
@@ -185,29 +192,39 @@ class DataPreprocessor:
                     parsed_idx1 = self._robust_parse_list(row[idx1_col])
                     parsed_idx2 = self._robust_parse_list(row[idx2_col])
 
-                    # Empty lists for idx are invalid
+                    # Empty lists for idx1 are invalid
                     if not isinstance(parsed_idx1, list) or len(parsed_idx1) == 0:
                         raise ValueError(f"{idx1_col} is empty")
-                    if not isinstance(parsed_idx2, list) or len(parsed_idx2) == 0:
-                        raise ValueError(f"{idx2_col} is empty")
+                    # parsed_idx2 can be empty for 1D variables
+                    if not isinstance(parsed_idx2, list):
+                        parsed_idx2 = []
 
-                    # Basic structure check for variable list-of-lists
-                    if not isinstance(parsed_var, list) or (len(parsed_var) > 0 and not isinstance(parsed_var[0], list)):
-                        raise ValueError(f"{var_name} is not a list-of-lists")
+                    # Determine whether variable data is 2D or 1D
+                    is_list = isinstance(parsed_var, list)
+                    is_2d = is_list and (len(parsed_var) > 0 and isinstance(parsed_var[0], list))
+                    is_1d = is_list and (len(parsed_var) == 0 or not isinstance(parsed_var[0], list))
+                    if not is_list:
+                        raise ValueError(f"{var_name} is not a list or list-of-lists")
 
                     if strategy == 'index':
                         i_bin = int(idx1_value)
-                        j_bin = int(idx2_value)
+                        # For 1D, ignore j index; otherwise, use it
+                        j_bin = int(idx2_value) if is_2d else 0
                         if len(parsed_idx1) <= i_bin:
                             raise ValueError(f"{idx1_col} length {len(parsed_idx1)} <= index {i_bin}")
-                        if len(parsed_idx2) <= j_bin:
+                        if is_2d and len(parsed_idx2) <= j_bin:
                             raise ValueError(f"{idx2_col} length {len(parsed_idx2)} <= index {j_bin}")
-                        if len(parsed_var) <= i_bin or len(parsed_var[i_bin]) <= j_bin:
-                            raise ValueError(f"{var_name} dimensions do not contain indices [{i_bin}][{j_bin}]")
+                        if is_2d:
+                            if len(parsed_var) <= i_bin or len(parsed_var[i_bin]) <= j_bin:
+                                raise ValueError(f"{var_name} dimensions do not contain indices [{i_bin}][{j_bin}]")
+                        else:
+                            if len(parsed_var) <= i_bin:
+                                raise ValueError(f"{var_name} length {len(parsed_var)} <= index {i_bin}")
                     else:  # value
                         # Ensure selected values fall within bin ranges
                         _ = self._find_bin_index(float(idx1_value), parsed_idx1)
-                        _ = self._find_bin_index(float(idx2_value), parsed_idx2)
+                        if is_2d:
+                            _ = self._find_bin_index(float(idx2_value), parsed_idx2)
                 except Exception as e:
                     invalid_indices.add(row_idx)
                     # Include groupby columns in warning context if present
@@ -287,7 +304,7 @@ class DataPreprocessor:
             try:
                 var_data = [_parse_list(x) for x in var_data]
             except (ValueError, SyntaxError):
-                raise ValueError(f"Unable to parse list of lists for variable {var_name}")
+                raise ValueError(f"Unable to parse list/list-of-lists for variable {var_name}")
         
         # Parse IDX data if string representation
         if isinstance(idx1_data[0], str):
@@ -300,7 +317,8 @@ class DataPreprocessor:
             try:
                 idx2_data = [_parse_list(x) for x in idx2_data]
             except (ValueError, SyntaxError):
-                raise ValueError(f"Unable to parse IDX2 data for variable {var_name}")
+                # Allow empty second-dimension in case of 1D variables
+                idx2_data = [[] for _ in range(len(idx1_data))]
         
         # Process each row to extract the correct value
         results = []
@@ -308,30 +326,38 @@ class DataPreprocessor:
         idx2_results = []
         
         for i in range(len(var_data)):
+            # Determine dimensionality for this row
+            is_2d = isinstance(var_data[i], list) and (len(var_data[i]) > 0 and isinstance(var_data[i][0], list))
             if strategy == 'index':
                 # Use direct indices
                 i_bin = int(idx1_value)
-                j_bin = int(idx2_value)
+                # If 1D array, use 0 for second index
+                j_bin = int(idx2_value) if is_2d else 0
                 
                 # Get the actual idx1/idx2 values at these indices
                 actual_idx1 = idx1_data[i][i_bin] if isinstance(idx1_data[i], list) else idx1_data[i]
-                actual_idx2 = idx2_data[i][j_bin] if isinstance(idx2_data[i], list) else idx2_data[i]
+                actual_idx2 = (idx2_data[i][j_bin] if (is_2d and isinstance(idx2_data[i], list) and len(idx2_data[i])>j_bin)
+                               else (idx2_data[i] if is_2d else None))
                 
             else:  # value
                 # Find the bin indices for the selected values
                 i_bin = self._find_bin_index(idx1_value, idx1_data[i])
-                j_bin = self._find_bin_index(idx2_value, idx2_data[i])
+                j_bin = self._find_bin_index(idx2_value, idx2_data[i]) if is_2d else 0
                 
                 # The actual values are the ones we're looking for
                 actual_idx1 = idx1_value
-                actual_idx2 = idx2_value
+                actual_idx2 = idx2_value if is_2d else None
             
             # Extract value from the list of lists
             try:
-                value = var_data[i][i_bin][j_bin]
+                if is_2d:
+                    value = var_data[i][i_bin][j_bin]
+                else:
+                    value = var_data[i][i_bin]
                 results.append(value)
                 idx1_results.append(actual_idx1)
-                idx2_results.append(actual_idx2)
+                # For 1D case, store placeholder for idx2
+                idx2_results.append(actual_idx2 if is_2d else np.nan)
             except (IndexError, TypeError):
                 raise ValueError(f"Unable to extract value at indices [{i_bin}][{j_bin}] for variable {var_name}, row {i}")
         
