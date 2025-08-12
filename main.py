@@ -205,8 +205,9 @@ Examples:
         else:
             logger.info("Visualization skipped")
             
-    except Exception as e:
-        logger.error(f"Error: {e}")
+    except Exception:
+        # Log full traceback to help debugging
+        logger.exception("Error")
         sys.exit(1)
 
 
