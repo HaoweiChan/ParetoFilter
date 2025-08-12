@@ -446,26 +446,41 @@ class DataPreprocessor:
                 continue
 
             # Store group information
-            group_info.extend([group_dict] * len(group_features))
+            group_len = len(group_features)
+            group_info.extend([group_dict] * group_len)
             all_processed_features.append(group_features)
             all_tolerance_values.append(group_tolerances)
             
             # Collect idx_values from this group safely
             if hasattr(self, 'idx_values') and self.idx_values:
-                for var_name, idx_data in self.idx_values.items():
+                # Build set of expected multi-value variables
+                multi_vars = [
+                    name for name, cfg in self.variable_configs.items()
+                    if (cfg.get('variable', cfg).get('type') == 'multi' and
+                        cfg.get('variable', cfg).get('selection_strategy') in ['index', 'value'])
+                ]
+                for var_name in multi_vars:
+                    idx_data = self.idx_values.get(var_name)
+                    if var_name not in combined_idx_values:
+                        combined_idx_values[var_name] = {'idx1': [], 'idx2': []}
                     try:
+                        if not idx_data:
+                            raise ValueError('missing idx data for variable')
                         idx1_vals = np.asarray(idx_data['idx1'])
                         idx2_vals = np.asarray(idx_data['idx2'])
                         if idx1_vals.ndim != 1 or idx2_vals.ndim != 1:
                             raise ValueError(f"inhomogeneous idx shapes: idx1.ndim={idx1_vals.ndim}, idx2.ndim={idx2_vals.ndim}")
-                        if var_name not in combined_idx_values:
-                            combined_idx_values[var_name] = {'idx1': [], 'idx2': []}
+                        if len(idx1_vals) != group_len or len(idx2_vals) != group_len:
+                            raise ValueError(f"idx length mismatch with group size {group_len}")
                         combined_idx_values[var_name]['idx1'].extend(idx1_vals.tolist())
                         combined_idx_values[var_name]['idx2'].extend(idx2_vals.tolist())
                     except Exception as e:
                         self.logger.warning(
-                            f"Skipping idx values for group {group_dict}, variable {var_name} due to shape inconsistency: {e}"
+                            f"Filling idx placeholders for group {group_dict}, variable {var_name} due to issue: {e}"
                         )
+                        # Keep alignment by appending NaNs of group length
+                        combined_idx_values[var_name]['idx1'].extend([np.nan] * group_len)
+                        combined_idx_values[var_name]['idx2'].extend([np.nan] * group_len)
         
         # Combine all groups
         if all_processed_features:
@@ -481,6 +496,22 @@ class DataPreprocessor:
                 try:
                     idx1_arr = np.array(combined_idx_values[var_name]['idx1'], dtype=float)
                     idx2_arr = np.array(combined_idx_values[var_name]['idx2'], dtype=float)
+                    # Sanity check alignment with processed rows
+                    if idx1_arr.shape[0] != processed_array.shape[0] or idx2_arr.shape[0] != processed_array.shape[0]:
+                        self.logger.warning(
+                            f"Variable {var_name} idx lengths ({idx1_arr.shape[0]}, {idx2_arr.shape[0]}) do not match processed rows ({processed_array.shape[0]}). "
+                            "Truncating/padding with NaN to align."
+                        )
+                        target_len = processed_array.shape[0]
+                        def _pad_or_truncate(arr):
+                            if arr.shape[0] > target_len:
+                                return arr[:target_len]
+                            if arr.shape[0] < target_len:
+                                pad = np.full(target_len - arr.shape[0], np.nan)
+                                return np.concatenate([arr, pad])
+                            return arr
+                        idx1_arr = _pad_or_truncate(idx1_arr)
+                        idx2_arr = _pad_or_truncate(idx2_arr)
                     sanitized_idx_values[var_name] = {'idx1': idx1_arr, 'idx2': idx2_arr}
                 except Exception as e:
                     self.logger.warning(

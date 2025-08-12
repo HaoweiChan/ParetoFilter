@@ -148,9 +148,24 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
                 idx_values = data['idx_values']
                 for var_name, idx_data in idx_values.items():
                     if 'idx1' in idx_data and 'idx2' in idx_data:
+                        import numpy as np
+                        idx1_arr = np.asarray(idx_data['idx1'])
+                        idx2_arr = np.asarray(idx_data['idx2'])
+                        # Guard against out-of-bounds if arrays are shorter than total candidates
+                        max_index = np.max(pareto_indices) if len(pareto_indices) else -1
+                        if idx1_arr.shape[0] <= max_index or idx2_arr.shape[0] <= max_index:
+                            # Align by padding with NaN up to required length
+                            target_len = max_index + 1
+                            def _pad(arr):
+                                if arr.shape[0] >= target_len:
+                                    return arr
+                                pad = np.full(target_len - arr.shape[0], np.nan)
+                                return np.concatenate([arr, pad])
+                            idx1_arr = _pad(idx1_arr)
+                            idx2_arr = _pad(idx2_arr)
                         # Get idx values for the selected Pareto candidates
-                        idx1_vals = idx_data['idx1'][pareto_indices]
-                        idx2_vals = idx_data['idx2'][pareto_indices]
+                        idx1_vals = idx1_arr[pareto_indices]
+                        idx2_vals = idx2_arr[pareto_indices]
                         df_data[f'{var_name}_IDX1_value'] = idx1_vals
                         df_data[f'{var_name}_IDX2_value'] = idx2_vals
             
