@@ -146,9 +146,18 @@ class DataPreprocessor:
             s = '[' + s + ']'
 
         try:
-            return ast.literal_eval(s)
+            result = ast.literal_eval(s)
+            return self._to_list_recursive(result)
         except (ValueError, SyntaxError) as e:
             raise ValueError(f"Unable to parse list: {value}") from e
+
+    def _to_list_recursive(self, obj: Any) -> Any:
+        """Recursively convert tuples to lists for consistent downstream handling."""
+        if isinstance(obj, tuple):
+            return [self._to_list_recursive(x) for x in obj]
+        if isinstance(obj, list):
+            return [self._to_list_recursive(x) for x in obj]
+        return obj
 
     def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
         """Find the bin index for a selected value given bin edges."""
@@ -272,10 +281,10 @@ class DataPreprocessor:
         idx1_data = data[idx1_col].values
         idx2_data = data[idx2_col].values
         
-        # A more robust parser for string-formatted lists
+                # A more robust parser for string-formatted lists
         def _parse_list(s):
             if not isinstance(s, str):
-                return s
+                return self._to_list_recursive(s)
             
             # Add commas between numbers and after brackets
             s = re.sub(r'(\d)\s+(\d)', r'\1, \2', s)
@@ -292,7 +301,8 @@ class DataPreprocessor:
             if not s.endswith(']'):   s = s + ']'
 
             try:
-                return ast.literal_eval(s)
+                parsed = ast.literal_eval(s)
+                return self._to_list_recursive(parsed)
             except (ValueError, SyntaxError):
                 raise ValueError(f"Unable to parse list: {s}")
 
@@ -323,7 +333,7 @@ class DataPreprocessor:
         idx2_results = []
         
         for i in range(len(var_data)):
-            # Determine dimensionality for this row
+            # Determine dimensionality for this row (lists or tuples normalized to lists already)
             is_2d = isinstance(var_data[i], list) and (len(var_data[i]) > 0 and isinstance(var_data[i][0], list))
             if strategy == 'index':
                 # Use direct indices
