@@ -178,61 +178,59 @@ class DataPreprocessor:
 
             idx1_col = f"{var_name}_IDX1"
             idx2_col = f"{var_name}_IDX2"
-            if idx1_col not in data.columns or idx2_col not in data.columns:
-                # Column presence is validated elsewhere; skip here to avoid duplication
-                continue
+            # For index strategy we don't need IDX columns at all
+            if variable_config.get('selection_strategy') != 'index':
+                if idx1_col not in data.columns or idx2_col not in data.columns:
+                    # Column presence is validated elsewhere; skip here to avoid duplication
+                    continue
 
             idx1_value = variable_config['idx1_value']
             idx2_value = variable_config['idx2_value']
             strategy = variable_config['selection_strategy']
 
-            for row_idx, row in data[[var_name, idx1_col, idx2_col]].iterrows():
-                try:
-                    parsed_var = self._robust_parse_list(row[var_name])
-                    parsed_idx1 = self._robust_parse_list(row[idx1_col])
-                    parsed_idx2 = self._robust_parse_list(row[idx2_col])
-
-                    # Empty lists for idx1 are invalid
-                    if not isinstance(parsed_idx1, list) or len(parsed_idx1) == 0:
-                        raise ValueError(f"{idx1_col} is empty")
-                    # parsed_idx2 can be empty for 1D variables
-                    if not isinstance(parsed_idx2, list):
-                        parsed_idx2 = []
-
-                    # Determine whether variable data is 2D or 1D
-                    is_list = isinstance(parsed_var, list)
-                    is_2d = is_list and (len(parsed_var) > 0 and isinstance(parsed_var[0], list))
-                    is_1d = is_list and (len(parsed_var) == 0 or not isinstance(parsed_var[0], list))
-                    if not is_list:
-                        raise ValueError(f"{var_name} is not a list or list-of-lists")
-
-                    if strategy == 'index':
+            if strategy == 'index':
+                # Only the variable column is needed for index strategy
+                for row_idx, row in data[[var_name]].iterrows():
+                    try:
+                        parsed_var = self._robust_parse_list(row[var_name])
+                        # Determine dimensionality
+                        if not isinstance(parsed_var, list):
+                            raise ValueError(f"{var_name} is not a list or list-of-lists")
+                        is_2d = len(parsed_var) > 0 and isinstance(parsed_var[0], list)
                         i_bin = int(idx1_value)
-                        # For 1D, ignore j index; otherwise, use it
                         j_bin = int(idx2_value) if is_2d else 0
-                        if len(parsed_idx1) <= i_bin:
-                            raise ValueError(f"{idx1_col} length {len(parsed_idx1)} <= index {i_bin}")
-                        if is_2d and len(parsed_idx2) <= j_bin:
-                            raise ValueError(f"{idx2_col} length {len(parsed_idx2)} <= index {j_bin}")
-                        if is_2d:
-                            if len(parsed_var) <= i_bin or len(parsed_var[i_bin]) <= j_bin:
-                                raise ValueError(f"{var_name} dimensions do not contain indices [{i_bin}][{j_bin}]")
-                        else:
-                            if len(parsed_var) <= i_bin:
-                                raise ValueError(f"{var_name} length {len(parsed_var)} <= index {i_bin}")
-                    else:  # value
+                        # Access value directly; if out-of-range, an exception will be raised
+                        _ = parsed_var[i_bin][j_bin] if is_2d else parsed_var[i_bin]
+                    except Exception as e:
+                        invalid_indices.add(row_idx)
+                        groupby_columns = self.config.get('groupby_columns', [])
+                        group_context = {col: data.at[row_idx, col] for col in groupby_columns if col in data.columns}
+                        self.logger.warning(
+                            f"Dropping row {row_idx} for variable {var_name} due to invalid index access: {e}. Context: {group_context}"
+                        )
+            else:
+                # value strategy requires idx arrays to map values to bins
+                for row_idx, row in data[[var_name, idx1_col, idx2_col]].iterrows():
+                    try:
+                        parsed_var = self._robust_parse_list(row[var_name])
+                        parsed_idx1 = self._robust_parse_list(row[idx1_col])
+                        parsed_idx2 = self._robust_parse_list(row[idx2_col])
+
+                        if not isinstance(parsed_var, list):
+                            raise ValueError(f"{var_name} is not a list or list-of-lists")
+                        is_2d = len(parsed_var) > 0 and isinstance(parsed_var[0], list)
+
                         # Ensure selected values fall within bin ranges
                         _ = self._find_bin_index(float(idx1_value), parsed_idx1)
                         if is_2d:
                             _ = self._find_bin_index(float(idx2_value), parsed_idx2)
-                except Exception as e:
-                    invalid_indices.add(row_idx)
-                    # Include groupby columns in warning context if present
-                    groupby_columns = self.config.get('groupby_columns', [])
-                    group_context = {col: data.at[row_idx, col] for col in groupby_columns if col in data.columns}
-                    self.logger.warning(
-                        f"Dropping row {row_idx} for variable {var_name} due to invalid data: {e}. Context: {group_context}"
-                    )
+                    except Exception as e:
+                        invalid_indices.add(row_idx)
+                        groupby_columns = self.config.get('groupby_columns', [])
+                        group_context = {col: data.at[row_idx, col] for col in groupby_columns if col in data.columns}
+                        self.logger.warning(
+                            f"Dropping row {row_idx} for variable {var_name} due to invalid data: {e}. Context: {group_context}"
+                        )
 
         if invalid_indices:
             cleaned = data.drop(index=sorted(invalid_indices)).reset_index(drop=True)
@@ -274,8 +272,7 @@ class DataPreprocessor:
         idx1_data = data[idx1_col].values
         idx2_data = data[idx2_col].values
         
-        
-                # A more robust parser for string-formatted lists
+        # A more robust parser for string-formatted lists
         def _parse_list(s):
             if not isinstance(s, str):
                 return s
@@ -362,8 +359,6 @@ class DataPreprocessor:
                 raise ValueError(f"Unable to extract value at indices [{i_bin}][{j_bin}] for variable {var_name}, row {i}")
         
         return np.array(results), np.array(idx1_results), np.array(idx2_results)
-    
-    
     
     def compute_tolerance(self, data: pd.DataFrame, var_name: str, 
                          var_config: Dict[str, Any]) -> np.ndarray:
