@@ -29,8 +29,8 @@ class ParetoSelector:
         if data.shape[0] == 0:
             raise ValueError("No data provided for Pareto selection")
         
-        if data.shape[1] != len(self.variable_configs):
-            raise ValueError(f"Data has {data.shape[1]} features but config has {len(self.variable_configs)} variables")
+        # Align incoming data/tolerances with variables declared in config
+        data, tolerances = self._align_data_to_config(data, tolerances)
         
         self.logger.info(f"Starting Pareto selection with {data.shape[0]} candidates and {data.shape[1]} objectives")
         
@@ -81,6 +81,30 @@ class ParetoSelector:
         self.logger.info(f"Pareto frontier selected: {len(pareto_indices)} candidates from {data.shape[0]} total")
         
         return pareto_indices, pareto_values
+
+    def _align_data_to_config(self, data: np.ndarray, tolerances: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Ensure data and tolerances match the number of configured variables.
+
+        - If there are extra columns in `data`/`tolerances`, slice to the first N (in order of preprocessing)
+        - If there are fewer columns than expected, raise an error
+        """
+        expected_n = len(self.variable_configs)
+        actual_n = data.shape[1]
+        if actual_n < expected_n:
+            raise ValueError(
+                f"Data has {actual_n} features but config has {expected_n} variables"
+            )
+        if actual_n > expected_n:
+            self.logger.warning(
+                f"Data has {actual_n} features but config declares {expected_n}. "
+                f"Using the first {expected_n} features in preprocessing order."
+            )
+            data = data[:, :expected_n]
+            if tolerances.ndim == 2 and tolerances.shape[1] >= expected_n:
+                tolerances = tolerances[:, :expected_n]
+            elif tolerances.ndim == 1 and tolerances.shape[0] >= expected_n:
+                tolerances = tolerances[:expected_n]
+        return data, tolerances
     
     def get_selection_metadata(self, data: np.ndarray, tolerances: np.ndarray, 
                              pareto_indices: List[int]) -> Dict[str, Any]:
