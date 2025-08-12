@@ -13,106 +13,29 @@ A Python tool for multi-dimensional Pareto frontier selection with advanced data
 
 ## Installation
 
-Preferred: uv (fast Python package manager)
+No manual setup is required. The tcsh scripts in `scripts/` will create and manage the environment for you.
 
-1. Clone the repository
-2. Install `uv` and sync the environment:
-```bash
-# One-time: install uv (macOS/Linux)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+## Quick Start (tcsh scripts only)
 
-# Prepare local .venv and install deps from pyproject.toml
-scripts/setup_uv.sh
-```
-
-Alternative: pip
-
-```bash
-pip install -r requirements.txt
-```
-
-## Quick Start
-
-1. **Install dependencies**:
+1. Open `scripts/run_pareto.sh` and set the `config` variable to your config path.
+2. Run the pipeline using tcsh:
    ```bash
-   # Using uv (recommended)
-   scripts/setup_uv.sh
-
-   # Or with pip
-   pip install -r requirements.txt
+   tcsh scripts/run_pareto.sh
    ```
 
-2. **Run with sample data (no dashboard by default)**:
-   ```bash
-   # Using uv
-   uv run python main.py --config runs/sample_run_1/config.yaml
-
-   # Or via helper script
-   scripts/run_pareto_uv.sh --config runs/sample_run_1/config.yaml
-
-   # Using system/python directly
-   python main.py --config runs/sample_run_1/config.yaml
-   ```
-
-3. **Launch dashboard after processing (opt-in)**:
-   ```bash
-   python main.py --config runs/sample_run_1/config.yaml --visualize
-   ```
-
-4. **Dashboard-only mode (re-uses vis_data.npz)**:
-   ```bash
-   python main.py --dashboard-only --config runs/sample_run_1/config.yaml
-   ```
-
-5. **Run with custom output directory**:
-   ```bash
-   python main.py --config runs/sample_run_1/config.yaml --run-dir custom_output_dir
-   ```
+Notes:
+- `scripts/run_pareto.sh` is the stable entry point. It sets up the Python environment and executes the pipeline for you.
+- `scripts/run_pareto_uv.sh` is experimental/unstable at the moment; do not use it.
+- If you need to enable the dashboard (e.g., `--visualize` or `--dashboard-only`), edit the `python_cmd` line inside the script to append the desired flags.
 
 ## Usage
 
+Run only via tcsh scripts:
 ```bash
-# Using uv
-uv run python main.py --config CONFIG_FILE [OPTIONS]
-
-# Or directly
-python main.py --config CONFIG_FILE [OPTIONS]
+tcsh scripts/run_pareto.sh
 ```
 
-### Arguments
-
-- `--config`: Path to configuration file (YAML or JSON) - **Required**
-
-### Options
-
-- `--processed-output`: Output file for processed data
-- `--run-dir`: Run directory for outputs (defaults to config file directory)
-- `--verbose, -v`: Enable verbose logging
-- `--visualize`: Launch dashboard after processing (never auto-starts without this flag)
-- `--dashboard-only`: Skip processing; load `vis_data.npz` next to the config and start dashboard
-- `--bind-all`: Bind dashboard to `0.0.0.0` (use with `--visualize` or `--dashboard-only`)
-
-### Examples
-
-```bash
-# Basic usage (no dashboard)
-python main.py --config runs/sample_run_1/config.yaml
-
-# With custom run directory
-python main.py --config runs/sample_run_1/config.yaml --run-dir runs/custom_run
-
-# With custom processed data output
-python main.py --config runs/sample_run_1/config.yaml --processed-output my_processed.csv
-
-# With verbose logging
-python main.py --config runs/sample_run_1/config.yaml --verbose
-
-# Launch dashboard after processing on all interfaces
-python main.py --config runs/sample_run_1/config.yaml --visualize --bind-all
-
-# Dashboard-only mode
-python main.py --dashboard-only --config runs/sample_run_1/config.yaml
-```
+Optional flags like `--visualize`, `--dashboard-only`, or `--bind-all` should be appended inside the script by editing its `python_cmd` line. Direct `python main.py` commands are not recommended and have been removed from this README.
 
 ## Configuration File Format
 
