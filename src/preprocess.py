@@ -109,6 +109,121 @@ class DataPreprocessor:
             nan_counts = data[check_columns].isna().sum()
             if nan_counts.any():
                 self.logger.warning(f"Found NaN values: {nan_counts[nan_counts > 0].to_dict()}")
+
+    def _robust_parse_list(self, value: Any) -> List[Any]:
+        """Parse string-formatted list (or list of lists) into a Python list.
+
+        - Accepts strings like "[1 2 3]" or "[1, 2, 3]" and normalizes them
+        - Returns lists as-is
+        - Returns empty list for clearly empty content like "[]" or "[ ]"
+        - Raises ValueError if parsing fails
+        """
+        if isinstance(value, list):
+            return value
+        if not isinstance(value, str):
+            return value
+
+        s = value
+        # Handle explicit empty list like "[]" or with spaces inside brackets
+        if re.fullmatch(r"\s*\[\s*\]\s*", s):
+            return []
+        # Normalize whitespace separated numbers and bracket boundaries
+        s = re.sub(r'(\d)\s+(\d)', r'\1, \2', s)
+        s = re.sub(r'\]\s+\[', r'], [', s)
+        s = s.replace(' ', ', ')
+        s = re.sub(r',,', ',', s)
+
+        if not s.startswith('['):
+            s = '[' + s
+        if not s.endswith(']'):
+            s = s + ']'
+
+        try:
+            return ast.literal_eval(s)
+        except (ValueError, SyntaxError) as e:
+            raise ValueError(f"Unable to parse list: {value}") from e
+
+    def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
+        """Find the bin index for a selected value given bin edges."""
+        bin_edges = sorted(bin_edges)
+        for i in range(len(bin_edges) - 1):
+            if bin_edges[i] <= selected_value < bin_edges[i + 1]:
+                return i
+        # Handle edge case where selected_value equals the last bin edge
+        if selected_value == bin_edges[-1]:
+            return len(bin_edges) - 2
+        raise ValueError(f"Selected value {selected_value} is outside bin range {bin_edges}")
+
+    def _filter_invalid_rows(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Drop rows with empty/unparseable multi-value or IDX data and log warnings.
+
+        This checks configured multi-value variables that use IDX-based selection.
+        Rows failing parsing or basic validation will be removed with a WARNING.
+        """
+        invalid_indices = set()
+
+        for var_name, var_config in self.variable_configs.items():
+            variable_config = var_config.get('variable', var_config)
+            if variable_config.get('type') != 'multi':
+                continue
+            if variable_config.get('selection_strategy') not in ['index', 'value']:
+                continue
+
+            idx1_col = f"{var_name}_IDX1"
+            idx2_col = f"{var_name}_IDX2"
+            if idx1_col not in data.columns or idx2_col not in data.columns:
+                # Column presence is validated elsewhere; skip here to avoid duplication
+                continue
+
+            idx1_value = variable_config['idx1_value']
+            idx2_value = variable_config['idx2_value']
+            strategy = variable_config['selection_strategy']
+
+            for row_idx, row in data[[var_name, idx1_col, idx2_col]].iterrows():
+                try:
+                    parsed_var = self._robust_parse_list(row[var_name])
+                    parsed_idx1 = self._robust_parse_list(row[idx1_col])
+                    parsed_idx2 = self._robust_parse_list(row[idx2_col])
+
+                    # Empty lists for idx are invalid
+                    if not isinstance(parsed_idx1, list) or len(parsed_idx1) == 0:
+                        raise ValueError(f"{idx1_col} is empty")
+                    if not isinstance(parsed_idx2, list) or len(parsed_idx2) == 0:
+                        raise ValueError(f"{idx2_col} is empty")
+
+                    # Basic structure check for variable list-of-lists
+                    if not isinstance(parsed_var, list) or (len(parsed_var) > 0 and not isinstance(parsed_var[0], list)):
+                        raise ValueError(f"{var_name} is not a list-of-lists")
+
+                    if strategy == 'index':
+                        i_bin = int(idx1_value)
+                        j_bin = int(idx2_value)
+                        if len(parsed_idx1) <= i_bin:
+                            raise ValueError(f"{idx1_col} length {len(parsed_idx1)} <= index {i_bin}")
+                        if len(parsed_idx2) <= j_bin:
+                            raise ValueError(f"{idx2_col} length {len(parsed_idx2)} <= index {j_bin}")
+                        if len(parsed_var) <= i_bin or len(parsed_var[i_bin]) <= j_bin:
+                            raise ValueError(f"{var_name} dimensions do not contain indices [{i_bin}][{j_bin}]")
+                    else:  # value
+                        # Ensure selected values fall within bin ranges
+                        _ = self._find_bin_index(float(idx1_value), parsed_idx1)
+                        _ = self._find_bin_index(float(idx2_value), parsed_idx2)
+                except Exception as e:
+                    invalid_indices.add(row_idx)
+                    # Include groupby columns in warning context if present
+                    groupby_columns = self.config.get('groupby_columns', [])
+                    group_context = {col: data.at[row_idx, col] for col in groupby_columns if col in data.columns}
+                    self.logger.warning(
+                        f"Dropping row {row_idx} for variable {var_name} due to invalid data: {e}. Context: {group_context}"
+                    )
+
+        if invalid_indices:
+            cleaned = data.drop(index=sorted(invalid_indices)).reset_index(drop=True)
+            self.logger.warning(
+                f"Dropped {len(invalid_indices)} row(s) with invalid multi-value/IDX data: {sorted(invalid_indices)[:20]}"
+            )
+            return cleaned
+        return data
     
     def process_multi_value_variable(self, data: pd.DataFrame, var_name: str, 
                                    var_config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -141,6 +256,7 @@ class DataPreprocessor:
         var_data = data[var_name].values
         idx1_data = data[idx1_col].values
         idx2_data = data[idx2_col].values
+        
         
                 # A more robust parser for string-formatted lists
         def _parse_list(s):
@@ -221,16 +337,7 @@ class DataPreprocessor:
         
         return np.array(results), np.array(idx1_results), np.array(idx2_results)
     
-    def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
-        """Find the bin index for a selected value given bin edges."""
-        bin_edges = sorted(bin_edges)
-        for i in range(len(bin_edges) - 1):
-            if bin_edges[i] <= selected_value < bin_edges[i + 1]:
-                return i
-        # Handle edge case where selected_value equals the last bin edge
-        if selected_value == bin_edges[-1]:
-            return len(bin_edges) - 2
-        raise ValueError(f"Selected value {selected_value} is outside bin range {bin_edges}")
+    
     
     def compute_tolerance(self, data: pd.DataFrame, var_name: str, 
                          var_config: Dict[str, Any]) -> np.ndarray:
@@ -269,6 +376,8 @@ class DataPreprocessor:
         data = self.load_data(data_path)
         data.rename(columns={'DYNAMIN_IDX2': 'DYNAMIC_IDX2'}, inplace=True)
         self.validate_data(data)
+        # Drop invalid rows upfront to avoid parse errors later
+        data = self._filter_invalid_rows(data)
         
         # Check if groupby processing is enabled
         groupby_columns = self.config.get('groupby_columns')
