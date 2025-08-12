@@ -1,14 +1,15 @@
 # Pareto Frontier Selection Tool
 
-A Python tool for multi-dimensional Pareto frontier selection with tolerance handling, supporting both single-value and multi-value variables, and an interactive Plotly visualization server.
+A Python tool for multi-dimensional Pareto frontier selection with advanced data processing (folder-based CSV loading, groupby processing, IDX-based multi-value selection) and an optional interactive Plotly dashboard.
 
 ## Features
 
-- **Data Loading**: Support for CSV and parquet files with single-value (N,) and multi-value (N, K) variables
-- **Configuration**: YAML/JSON config files specifying variable types, tolerances, and selection strategies
-- **Preprocessing**: Multi-value variable reduction and tolerance computation
-- **Pareto Selection**: Using Platypus EpsilonBoxArchive with per-feature epsilon
-- **Visualization**: Interactive Plotly dashboard with 2D/3D scatter plots and tolerance visualization
+- **Folder-Based Data Loading**: Load one or many CSV files from a directory and concatenate automatically
+- **Groupby Processing**: Optimize Pareto frontier per group (e.g., by `FP`, `STD`)
+- **Multi-Value Variables with IDXs**: Select from list-of-lists using IDX1/IDX2 bin edges (value- or index-based)
+- **Per-Feature Tolerances**: Absolute or relative epsilon values
+- **Pareto Selection**: Platypus EpsilonBoxArchive
+- **Optional Dashboard**: 2D/3D scatter, tolerance overlays, interactive tooltips
 
 ## Installation
 
@@ -41,7 +42,7 @@ pip install -r requirements.txt
    pip install -r requirements.txt
    ```
 
-2. **Run with sample data**:
+2. **Run with sample data (no dashboard by default)**:
    ```bash
    # Using uv
    uv run python main.py --config runs/sample_run_1/config.yaml
@@ -53,7 +54,17 @@ pip install -r requirements.txt
    python main.py --config runs/sample_run_1/config.yaml
    ```
 
-3. **Run with custom output directory**:
+3. **Launch dashboard after processing (opt-in)**:
+   ```bash
+   python main.py --config runs/sample_run_1/config.yaml --visualize
+   ```
+
+4. **Dashboard-only mode (re-uses vis_data.npz)**:
+   ```bash
+   python main.py --dashboard-only --config runs/sample_run_1/config.yaml
+   ```
+
+5. **Run with custom output directory**:
    ```bash
    python main.py --config runs/sample_run_1/config.yaml --run-dir custom_output_dir
    ```
@@ -77,11 +88,14 @@ python main.py --config CONFIG_FILE [OPTIONS]
 - `--processed-output`: Output file for processed data
 - `--run-dir`: Run directory for outputs (defaults to config file directory)
 - `--verbose, -v`: Enable verbose logging
+- `--visualize`: Launch dashboard after processing (never auto-starts without this flag)
+- `--dashboard-only`: Skip processing; load `vis_data.npz` next to the config and start dashboard
+- `--bind-all`: Bind dashboard to `0.0.0.0` (use with `--visualize` or `--dashboard-only`)
 
 ### Examples
 
 ```bash
-# Basic usage
+# Basic usage (no dashboard)
 python main.py --config runs/sample_run_1/config.yaml
 
 # With custom run directory
@@ -92,103 +106,88 @@ python main.py --config runs/sample_run_1/config.yaml --processed-output my_proc
 
 # With verbose logging
 python main.py --config runs/sample_run_1/config.yaml --verbose
+
+# Launch dashboard after processing on all interfaces
+python main.py --config runs/sample_run_1/config.yaml --visualize --bind-all
+
+# Dashboard-only mode
+python main.py --dashboard-only --config runs/sample_run_1/config.yaml
 ```
 
-### Configuration File Format
+## Configuration File Format
 
 ```yaml
 run:
-  # Use input CSV filename as prefix for output files
+  # Input path: a single CSV file or a directory of CSV files
+  input_dir: path/to/data_or_dir
+
+  # Use input filename as prefix for output files
   use_input_prefix: true
-  
-  # Visualization settings
-  generate_visualization: true
-  dashboard_port: 8050
-  dashboard_host: localhost
-  
+
   # Output settings
   output_processed_data: true
-  # Note: Output format is always CSV for Pareto results
 
-data:
-  variable_name:
-    objective: "minimize" | "maximize"
-    variable:
-      type: "single" | "multi"
-      # For multi-value variables:
-      selection_strategy: "index" | "value"
-      # index: use integer bin indices; value: use numeric values to locate bins
-      idx1_value: int | float
-      idx2_value: int | float
-    tolerance:
-      type: "absolute" | "relative"
-      value: float
-```
+# Optional: dashboard settings (server does NOT auto-start from config)
+visualization:
+  dashboard_port: 8050
+  dashboard_host: localhost
 
-### Data Format
-
-- **Single-value variables**: Shape (N,) - direct tolerance application
-- **Multi-value variables**: Shape (N, K) - requires selection strategy
-  - Index selection: use integer bin indices (0-based) over IDX1/IDX2
-  - Value selection: use numeric values to find bins in IDX1/IDX2 and select from list of lists
-
-### Folder-Based Data Loading
-
-The tool now supports loading multiple CSV files from a folder:
-
-```yaml
-run:
-  input_file: /path/to/csv/folder  # Folder containing multiple CSV files
-```
-
-All CSV files in the folder will be automatically loaded and concatenated into a single DataFrame.
-
-### Groupby Processing
-
-Process data in groups based on categorical columns (e.g., FP, STD):
-
-```yaml
+# Optional: groupby columns for grouped Pareto selection
 groupby_columns:
   - FP
   - STD
-```
 
-Pareto frontier selection will be performed separately for each unique combination of groupby column values.
-
-### IDX-Based Multi-Value Variables
-
-For multi-value variables stored as list of lists with corresponding IDX columns:
-
-```yaml
 data:
-  DYNAMIC:  # Multi-value variable
+  AREA:
+    objective: minimize
+    variable:
+      type: single
+    tolerance:
+      type: absolute
+      value: 1.0
+
+  DYNAMIC:
     objective: minimize
     variable:
       type: multi
-      selection_strategy: value
-      idx1_value: 0.25
+      selection_strategy: value   # or: index
+      idx1_value: 0.25            # value- or index-based depending on strategy
       idx2_value: 2.5
     tolerance:
       type: relative
       value: 0.15
 ```
 
-Expected CSV columns:
-- `DYNAMIC`: List of lists containing the actual values
-- `DYNAMIC_IDX1`: List of bin edge values for first dimension
-- `DYNAMIC_IDX2`: List of bin edge values for second dimension
+Notes:
+- The dashboard never auto-starts from config; use `--visualize` or `--dashboard-only`.
+- `run.input_dir` may point to a directory; all CSVs within are loaded and concatenated.
+- For legacy configs, `run.input_file` is still accepted.
 
-The tool will find the appropriate bin indices and extract `DYNAMIC[i][j]` where `i` and `j` are determined by the bin locations of `selected_idx1` and `selected_idx2`.
+## Data Format
+
+- Expected CSV columns (example): `FP,STD,AREA,OUT_CAP,LEAKAGE,DYNAMIC_IDX1,DYNAMIC_IDX2,DYNAMIC,TRANSITION_IDX1,TRANSITION_IDX2,TRANSITION,DELAY_IDX1,DELAY_IDX2,DELAY`
+- **FP, STD**: Groupby columns (strings)
+- **AREA, OUT_CAP, LEAKAGE**: Single-value variables (numeric)
+- **DYNAMIC, TRANSITION, DELAY**: Multi-value variables (list of lists)
+- **_IDX1, _IDX2**: Bin edge arrays for IDX-based value selection
+
+### Multi-Value Variable Processing
+
+- IDX-based selection uses IDX1/IDX2 bin edges to find the appropriate element `variable[i][j]`
+- Supports both index and value strategies (`selection_strategy`)
+
+## Outputs
+
+- `vis_data.npz`: Saved next to the config or in `--run-dir`; used by `--dashboard-only`
+- `pareto_results.csv`: Pareto front summary with columns ordered as:
+  - `candidate_index`
+  - For each feature in `feature_names`: `FEATURE`, `FEATURE_IDX1`, `FEATURE_IDX2` (IDX columns appear immediately after their feature when applicable)
+- `processed_data.csv`: When `--processed-output` is provided or `run.output_processed_data` is true
 
 ## Dashboard Features
 
-The interactive dashboard provides:
-- **2D/3D Scatter Plots**: Visualize Pareto frontier candidates
-- **Feature Selection**: Choose up to 3 features to plot
-- **Tolerance Visualization**: See tolerance ranges around points
-- **Interactive Tooltips**: Display candidate values and metadata
-- **Statistics Panel**: View selection metrics and reduction ratios
-- **Real-time Updates**: Dynamic plotting based on feature selection
+- 2D/3D scatter plots, feature selection, tolerance visualization, interactive tooltips, statistics panel
+- Use `--bind-all` to expose the dashboard on your network (0.0.0.0)
 
 ## Project Structure
 
@@ -196,27 +195,21 @@ The interactive dashboard provides:
 ParetoFilter/
 ├── requirements.txt
 ├── README.md
-├── config.yaml                   # Example/global config for reference
-├── main.py                       # Main CLI interface and entry point
+├── main.py                       # CLI and entry point
 ├── src/
 │   ├── preprocess.py             # Data preprocessing and tolerance handling
 │   ├── pareto.py                 # Pareto frontier selection logic
 │   ├── visualization.py          # Plotly dashboard implementation
 │   └── utils.py                  # Utility functions
 ├── runs/
-│   ├── sample_run/               # For example/sample/demo usage
-│   │   ├── config.yaml           # Sample config for this data
-│   │   ├── sample_data.csv       # Sample input data
-│   │   ├── output_front.json     # Output: Pareto front results
-│   │   ├── output_processed.csv  # Output: Preprocessed data
-│   │   └── viz/                  # (optional) Saved figures/plots
-│   └── ...                      # Other experiment runs
+│   ├── sample_run_1/
+│   │   ├── config.yaml           # Sample config
+│   │   ├── sample_run_1_processed_data.csv
+│   │   ├── sample_run_1_pareto_results.csv
+│   │   └── vis_data.npz
+│   └── ...
 ```
-
-## Examples
-
-See the `runs/sample_run/` directory for sample data and configuration files. Example usage is provided below.
 
 ## Development
 
-This project targets Python 3.11 and uses type hints throughout. Follow the coding standards in the Cursor Rules for consistency. 
+This project targets Python 3.11 and uses type hints throughout. Follow the coding standards in the Cursor Rules for consistency.
