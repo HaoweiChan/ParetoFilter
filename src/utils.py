@@ -138,36 +138,43 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
             pareto_values = np.array(data['pareto_values'])
             feature_names = data['feature_names']
             
-            # Create DataFrame with indices and values
+            # Create DataFrame columns, ensuring IDX columns immediately follow their variable
             df_data = {'candidate_index': pareto_indices}
+            pareto_indices_arr = np.asarray(pareto_indices, dtype=int)
+
+            idx_values = data.get('idx_values', {})
+
             for i, feature_name in enumerate(feature_names):
+                # Base feature values
                 df_data[feature_name] = pareto_values[:, i]
-            
-            # Add idx values for multi-value variables if available
-            if 'idx_values' in data:
-                idx_values = data['idx_values']
-                for var_name, idx_data in idx_values.items():
-                    if 'idx1' in idx_data and 'idx2' in idx_data:
-                        import numpy as np
-                        idx1_arr = np.asarray(idx_data['idx1'])
-                        idx2_arr = np.asarray(idx_data['idx2'])
-                        # Guard against out-of-bounds if arrays are shorter than total candidates
-                        max_index = np.max(pareto_indices) if len(pareto_indices) else -1
-                        if idx1_arr.shape[0] <= max_index or idx2_arr.shape[0] <= max_index:
-                            # Align by padding with NaN up to required length
-                            target_len = max_index + 1
-                            def _pad(arr):
-                                if arr.shape[0] >= target_len:
-                                    return arr
-                                pad = np.full(target_len - arr.shape[0], np.nan)
-                                return np.concatenate([arr, pad])
-                            idx1_arr = _pad(idx1_arr)
-                            idx2_arr = _pad(idx2_arr)
-                        # Get idx values for the selected Pareto candidates
-                        idx1_vals = idx1_arr[pareto_indices]
-                        idx2_vals = idx2_arr[pareto_indices]
-                        df_data[f'{var_name}_IDX1_value'] = idx1_vals
-                        df_data[f'{var_name}_IDX2_value'] = idx2_vals
+
+                # If this feature has idx1/idx2 values, append them right after
+                idx_data = idx_values.get(feature_name)
+                if isinstance(idx_data, dict) and 'idx1' in idx_data and 'idx2' in idx_data:
+                    idx1_arr = np.asarray(idx_data['idx1'])
+                    idx2_arr = np.asarray(idx_data['idx2'])
+
+                    # Guard against out-of-bounds if arrays are shorter than total candidates
+                    max_index = int(pareto_indices_arr.max()) if pareto_indices_arr.size > 0 else -1
+                    if idx1_arr.shape[0] <= max_index or idx2_arr.shape[0] <= max_index:
+                        # Align by padding with NaN up to required length
+                        target_len = max_index + 1
+
+                        def _pad(arr: np.ndarray) -> np.ndarray:
+                            if arr.shape[0] >= target_len:
+                                return arr
+                            pad = np.full(target_len - arr.shape[0], np.nan)
+                            return np.concatenate([arr, pad])
+
+                        idx1_arr = _pad(idx1_arr)
+                        idx2_arr = _pad(idx2_arr)
+
+                    # Get idx values for the selected Pareto candidates
+                    idx1_vals = idx1_arr[pareto_indices_arr]
+                    idx2_vals = idx2_arr[pareto_indices_arr]
+
+                    df_data[f'{feature_name}_IDX1'] = idx1_vals
+                    df_data[f'{feature_name}_IDX2'] = idx2_vals
             
             # Add metadata as separate rows or in a comment
             df = pd.DataFrame(df_data)

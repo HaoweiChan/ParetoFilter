@@ -33,6 +33,7 @@ Examples:
   python main.py --config runs/sample_run_1/config.yaml
   python main.py --config runs/sample_run_1/config.yaml --run-dir custom_run_dir
   python main.py --config runs/sample_run_1/config.yaml --processed-output processed.csv
+  python main.py --config runs/sample_run_1/config.yaml --visualize
   python main.py --dashboard-only --config runs/sample_run_1/config.yaml
         """
     )
@@ -45,6 +46,7 @@ Examples:
     parser.add_argument('--run-dir', help='Run directory for outputs (defaults to config file directory)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     parser.add_argument('--dashboard-only', action='store_true', help='Only launch dashboard using vis_data.npz and config (skip processing)')
+    parser.add_argument('--visualize', action='store_true', help='Launch dashboard after processing. Dashboard will not start unless this flag is provided (ignores config setting).')
     parser.add_argument('--bind-all', action='store_true', help='Bind dashboard to all network interfaces (0.0.0.0), making it accessible externally.')
     
     args = parser.parse_args()
@@ -194,16 +196,19 @@ Examples:
         
         save_results(results, pareto_output_path, 'csv')
         
-        # Launch dashboard if requested
-        generate_viz = viz_config.get('generate_visualization', False)
-        if generate_viz:
+        # Launch dashboard only when explicitly requested via CLI flag
+        generate_viz_config = viz_config.get('generate_visualization', False)
+        if args.visualize:
             dashboard_host = '0.0.0.0' if args.bind_all else viz_config.get('dashboard_host', 'localhost')
             dashboard_port = viz_config.get('dashboard_port', 8050)
             logger.info(f"Launching dashboard on {dashboard_host}:{dashboard_port}")
             dashboard = Dashboard(config, processed_data, pareto_indices, tolerances)
             dashboard.run(host=dashboard_host, port=dashboard_port)
         else:
-            logger.info("Visualization skipped")
+            if generate_viz_config:
+                logger.info("Visualization is enabled in config but will not launch without --visualize flag")
+            else:
+                logger.info("Visualization skipped")
             
     except Exception:
         # Log full traceback to help debugging
