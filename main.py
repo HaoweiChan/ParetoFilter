@@ -12,6 +12,7 @@ import logging
 import argparse
 import numpy as np
 from pathlib import Path
+from datetime import datetime
 
 # Add src directory to Python path (before importing local modules)
 src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
@@ -20,7 +21,7 @@ sys.path.insert(0, src_path)
 from pareto import ParetoSelector
 from preprocess import DataPreprocessor
 from visualization import Dashboard
-from utils import load_config, validate_config, setup_logging, save_results, create_run_directory
+from utils import load_config, validate_config, setup_logging, save_results
 
 
 def main() -> None:
@@ -129,7 +130,10 @@ Examples:
         output_processed_data = run_config.get('output_processed_data', False)
         
         # Generate output filenames
-        input_stem = Path(input_dir).stem if use_input_prefix else None
+        if use_input_prefix:
+            input_stem = Path(input_dir).stem
+        else:
+            input_stem = datetime.now().strftime('%Y%m%d')
         
         # Save processed data if requested
         if args.processed_output or output_processed_data:

@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any
-from datetime import datetime
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -126,8 +125,6 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     if format.lower() == 'csv':
-        
-        
         if isinstance(data, np.ndarray):
             df = pd.DataFrame(data)
         elif isinstance(data, dict) and 'pareto_indices' in data:
@@ -217,17 +214,3 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
             json.dump(data, f, indent=2, default=str)
     else:
         raise ValueError(f"Unsupported output format: {format}")
-
-def create_run_directory(run_name: str = None) -> Path:
-    """Create a new run directory with timestamp."""    
-    if run_name is None:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        run_name = f"run_{timestamp}"
-    
-    run_dir = Path("runs") / run_name
-    run_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create subdirectories
-    (run_dir / "viz").mkdir(exist_ok=True)
-    
-    return run_dir 
