@@ -159,35 +159,81 @@ class DataPreprocessor:
             return [self._to_list_recursive(x) for x in obj]
         return obj
 
-    def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
-        """Find the bin index for a selected value given bin edges.
+    def _find_float_bin_index(self, selected_value: float, bin_edges: List[float]) -> float:
+        """Find the floating-point bin index for a selected value given bin edges for interpolation."""
+        if not isinstance(bin_edges, list) or not bin_edges:
+            raise ValueError("bin_edges must be a non-empty list.")
 
-        A value belongs to bin `i` (0-indexed) if `bin_edges[i] < value <= bin_edges[i+1]`.
-        This is for a grid where values are associated with grid cells.
-        """
-        if not isinstance(bin_edges, list):
-            bin_edges = list(bin_edges)
-        if not bin_edges:
-            raise ValueError("bin_edges cannot be empty.")
-            
-        bin_edges = sorted(bin_edges)
-        selected_value = float(selected_value)
+        if len(bin_edges) == 1:
+            if selected_value == bin_edges[0]:
+                return 0.0
+            raise ValueError(f"Selected value {selected_value} does not match the only bin edge {bin_edges[0]}")
 
-        # Handle edge cases
-        if selected_value <= bin_edges[0]:
-            return 0
-        if selected_value > bin_edges[-1]:
-            self.logger.warning(
-                f"Selected value {selected_value} is greater than the last bin edge {bin_edges[-1]}. "
-                f"Using the last valid bin index."
-            )
-            return len(bin_edges) - 1
+        bin_edges_arr = np.array(sorted(bin_edges))
+
+        if not (bin_edges_arr[0] <= selected_value <= bin_edges_arr[-1]):
+            raise ValueError(f"Selected value {selected_value} is outside bin range [{bin_edges_arr[0]}, {bin_edges_arr[-1]}]")
+
+        pos = np.searchsorted(bin_edges_arr, selected_value, side='right') - 1
+        pos = max(0, min(pos, len(bin_edges_arr) - 2))
+
+        lower_bound = bin_edges_arr[pos]
+        upper_bound = bin_edges_arr[pos + 1]
+
+        if np.isclose(upper_bound, lower_bound):
+            fraction = 0.0
+        else:
+            fraction = (selected_value - lower_bound) / (upper_bound - lower_bound)
         
-        # np.searchsorted is efficient for this. `side='left'` finds `i` where `a[i-1] < v <= a[i]`.
-        # The returned index `i` is a 1-based index for the upper edge of the bin.
-        # We subtract 1 for a 0-based bin index.
-        index = np.searchsorted(bin_edges, selected_value, side='left')
-        return index - 1
+        return pos + fraction
+
+    def _interpolate_1d(self, arr: List[float], f_i: float) -> float:
+        """Performs linear interpolation on a 1D array."""
+        num_elements = len(arr)
+        if num_elements == 0:
+            return np.nan
+
+        i_low = int(f_i)
+        i_low = max(0, min(i_low, num_elements - 1))
+        i_high = min(i_low + 1, num_elements - 1)
+        
+        di = f_i - i_low
+
+        v_low = arr[i_low]
+        v_high = arr[i_high]
+        
+        return v_low * (1 - di) + v_high * di
+
+    def _interpolate_2d(self, grid: List[List[float]], f_i: float, f_j: float) -> float:
+        """Performs bilinear interpolation on a 2D grid."""
+        num_rows = len(grid)
+        if num_rows == 0 or not isinstance(grid[0], list):
+            return np.nan
+        num_cols = len(grid[0])
+        if num_cols == 0:
+            return np.nan
+
+        i_low = int(f_i)
+        j_low = int(f_j)
+        
+        i_low = max(0, min(i_low, num_rows - 1))
+        j_low = max(0, min(j_low, num_cols - 1))
+        
+        i_high = min(i_low + 1, num_rows - 1)
+        j_high = min(j_low + 1, num_cols - 1)
+        
+        di = f_i - i_low
+        dj = f_j - j_low
+
+        v00 = grid[i_low][j_low]
+        v10 = grid[i_high][j_low]
+        v01 = grid[i_low][j_high]
+        v11 = grid[i_high][j_high]
+
+        v_j_low = v00 * (1 - di) + v10 * di
+        v_j_high = v01 * (1 - di) + v11 * di
+        
+        return v_j_low * (1 - dj) + v_j_high * dj
 
     def _filter_invalid_rows(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Drop rows with empty/unparseable multi-value or IDX data and log warnings.
@@ -251,9 +297,9 @@ class DataPreprocessor:
                         is_2d = len(parsed_var) > 0 and isinstance(parsed_var[0], list)
 
                         # Ensure selected values fall within bin ranges
-                        _ = self._find_bin_index(float(idx1_value), parsed_idx1)
+                        _ = self._find_float_bin_index(float(idx1_value), parsed_idx1)
                         if is_2d:
-                            _ = self._find_bin_index(float(idx2_value), parsed_idx2)
+                            _ = self._find_float_bin_index(float(idx2_value), parsed_idx2)
                     except Exception as e:
                         invalid_indices.add(row_idx)
                         groupby_columns = self.config.get('groupby_columns', [])
@@ -359,38 +405,41 @@ class DataPreprocessor:
         for i in range(len(var_data)):
             # Determine dimensionality for this row (lists or tuples normalized to lists already)
             is_2d = isinstance(var_data[i], list) and (len(var_data[i]) > 0 and isinstance(var_data[i][0], list))
-            if strategy == 'index':
-                # Use direct indices
-                i_bin = int(idx1_value)
-                # If 1D array, use 0 for second index
-                j_bin = int(idx2_value) if is_2d else 0
-                
-                # Get the actual idx1/idx2 values at these indices
-                actual_idx1 = idx1_data[i][i_bin] if isinstance(idx1_data[i], list) else idx1_data[i]
-                actual_idx2 = (idx2_data[i][j_bin] if (is_2d and isinstance(idx2_data[i], list) and len(idx2_data[i])>j_bin)
-                               else (idx2_data[i] if is_2d else None))
-                
-            else:  # value
-                # Find the bin indices for the selected values
-                i_bin = self._find_bin_index(idx1_value, idx1_data[i])
-                j_bin = self._find_bin_index(idx2_value, idx2_data[i]) if is_2d else 0
-                
-                # The actual values are the ones we're looking for
-                actual_idx1 = idx1_value
-                actual_idx2 = idx2_value if is_2d else None
-            
-            # Extract value from the list of lists
             try:
-                if is_2d:
-                    value = var_data[i][i_bin][j_bin]
-                else:
-                    value = var_data[i][i_bin]
+                if strategy == 'index':
+                    # Use direct indices
+                    i_bin = int(idx1_value)
+                    # If 1D array, use 0 for second index
+                    j_bin = int(idx2_value) if is_2d else 0
+                    
+                    # Get the actual idx1/idx2 values at these indices
+                    actual_idx1 = idx1_data[i][i_bin] if isinstance(idx1_data[i], list) else idx1_data[i]
+                    actual_idx2 = (idx2_data[i][j_bin] if (is_2d and isinstance(idx2_data[i], list) and len(idx2_data[i])>j_bin)
+                                else (idx2_data[i] if is_2d else None))
+                    
+                    if is_2d:
+                        value = var_data[i][i_bin][j_bin]
+                    else:
+                        value = var_data[i][i_bin]
+                
+                else:  # value strategy with interpolation
+                    actual_idx1 = float(idx1_value)
+                    actual_idx2 = float(idx2_value) if is_2d else None
+                    
+                    if is_2d:
+                        f_i = self._find_float_bin_index(actual_idx1, idx1_data[i])
+                        f_j = self._find_float_bin_index(actual_idx2, idx2_data[i])
+                        value = self._interpolate_2d(var_data[i], f_i, f_j)
+                    else: # 1D
+                        f_i = self._find_float_bin_index(actual_idx1, idx1_data[i])
+                        value = self._interpolate_1d(var_data[i], f_i)
+                
                 results.append(value)
                 idx1_results.append(actual_idx1)
                 # For 1D case, store placeholder for idx2
                 idx2_results.append(actual_idx2 if is_2d else np.nan)
-            except (IndexError, TypeError):
-                raise ValueError(f"Unable to extract value at indices [{i_bin}][{j_bin}] for variable {var_name}, row {i}")
+            except Exception as e:
+                raise ValueError(f"Unable to extract value for variable {var_name}, row {i}: {e}")
         
         return np.array(results), np.array(idx1_results), np.array(idx2_results)
     
