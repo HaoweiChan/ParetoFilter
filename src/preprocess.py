@@ -170,11 +170,13 @@ class DataPreprocessor:
             return len(bin_edges) - 2
         raise ValueError(f"Selected value {selected_value} is outside bin range {bin_edges}")
 
-    def _filter_invalid_rows(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _filter_invalid_rows(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Drop rows with empty/unparseable multi-value or IDX data and log warnings.
-
+        
         This checks configured multi-value variables that use IDX-based selection.
         Rows failing parsing or basic validation will be removed with a WARNING.
+        
+        Returns a tuple of (cleaned_dataframe, invalid_rows_dataframe).
         """
         invalid_indices = set()
 
@@ -242,13 +244,16 @@ class DataPreprocessor:
                         )
 
         if invalid_indices:
-            cleaned = data.drop(index=sorted(invalid_indices)).reset_index(drop=True)
+            invalid_rows_df = data.loc[sorted(list(invalid_indices))].copy()
+            cleaned_df = data.drop(index=sorted(list(invalid_indices))).reset_index(drop=True)
             self.logger.warning(
-                f"Dropped {len(invalid_indices)} row(s) with invalid multi-value/IDX data: {sorted(invalid_indices)[:20]}"
+                f"Dropped {len(invalid_indices)} row(s) with invalid multi-value/IDX data. "
+                "These rows have been saved to a separate file."
             )
-            return cleaned
-        return data
-    
+            return cleaned_df, invalid_rows_df
+            
+        return data, pd.DataFrame()
+
     def process_multi_value_variable(self, data: pd.DataFrame, var_name: str, 
                                    var_config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Process multi-value variable using 'index' or 'value' strategy.
@@ -408,7 +413,7 @@ class DataPreprocessor:
         data.rename(columns={'DYNAMIN_IDX2': 'DYNAMIC_IDX2'}, inplace=True)
         self.validate_data(data)
         # Drop invalid rows upfront to avoid parse errors later
-        data = self._filter_invalid_rows(data)
+        data, self.invalid_rows = self._filter_invalid_rows(data)
         
         # Check if groupby processing is enabled
         groupby_columns = self.config.get('groupby_columns')

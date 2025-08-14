@@ -134,6 +134,12 @@ Examples:
             input_stem = Path(input_dir).stem
         else:
             input_stem = datetime.now().strftime('%Y%m%d')
+            
+        # Save invalid rows if any were found
+        if hasattr(preprocessor, 'invalid_rows') and not preprocessor.invalid_rows.empty:
+            invalid_rows_path = run_dir / f"{input_stem}_invalid_rows.csv"
+            logger.info(f"Saving {len(preprocessor.invalid_rows)} invalid rows to {invalid_rows_path}")
+            preprocessor.invalid_rows.to_csv(invalid_rows_path, index=False)
         
         # Save processed data if requested
         if args.processed_output or output_processed_data:
