@@ -160,15 +160,34 @@ class DataPreprocessor:
         return obj
 
     def _find_bin_index(self, selected_value: float, bin_edges: List[float]) -> int:
-        """Find the bin index for a selected value given bin edges."""
+        """Find the bin index for a selected value given bin edges.
+
+        A value belongs to bin `i` (0-indexed) if `bin_edges[i] < value <= bin_edges[i+1]`.
+        This is for a grid where values are associated with grid cells.
+        """
+        if not isinstance(bin_edges, list):
+            bin_edges = list(bin_edges)
+        if not bin_edges:
+            raise ValueError("bin_edges cannot be empty.")
+            
         bin_edges = sorted(bin_edges)
-        for i in range(len(bin_edges) - 1):
-            if bin_edges[i] <= selected_value < bin_edges[i + 1]:
-                return i
-        # Handle edge case where selected_value equals the last bin edge
-        if selected_value == bin_edges[-1]:
-            return len(bin_edges) - 2
-        raise ValueError(f"Selected value {selected_value} is outside bin range {bin_edges}")
+        selected_value = float(selected_value)
+
+        # Handle edge cases
+        if selected_value <= bin_edges[0]:
+            return 0
+        if selected_value > bin_edges[-1]:
+            self.logger.warning(
+                f"Selected value {selected_value} is greater than the last bin edge {bin_edges[-1]}. "
+                f"Using the last valid bin index."
+            )
+            return len(bin_edges) - 1
+        
+        # np.searchsorted is efficient for this. `side='left'` finds `i` where `a[i-1] < v <= a[i]`.
+        # The returned index `i` is a 1-based index for the upper edge of the bin.
+        # We subtract 1 for a 0-based bin index.
+        index = np.searchsorted(bin_edges, selected_value, side='left')
+        return index - 1
 
     def _filter_invalid_rows(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Drop rows with empty/unparseable multi-value or IDX data and log warnings.
