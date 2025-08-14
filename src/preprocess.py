@@ -413,6 +413,15 @@ class DataPreprocessor:
         # Check if groupby processing is enabled
         groupby_columns = self.config.get('groupby_columns')
         if groupby_columns:
+            # Identify passthrough columns
+            variable_names = list(self.variable_configs.keys())
+            self.passthrough_columns = [
+                col for col in data.columns 
+                if col not in groupby_columns and col not in variable_names and not col.endswith(('_IDX1', '_IDX2'))
+            ]
+            if self.passthrough_columns:
+                self.logger.info(f"Identified passthrough columns: {self.passthrough_columns}")
+            
             return self._process_with_groupby(data, groupby_columns)
         else:
             return self._process_single_group(data)
@@ -431,6 +440,7 @@ class DataPreprocessor:
         all_processed_features = []
         all_tolerance_values = []
         group_info = []
+        passthrough_data = []
         
         # Initialize combined idx_values storage
         combined_idx_values = {}
@@ -450,6 +460,10 @@ class DataPreprocessor:
             group_info.extend([group_dict] * group_len)
             all_processed_features.append(group_features)
             all_tolerance_values.append(group_tolerances)
+            
+            # Store passthrough data
+            if self.passthrough_columns:
+                passthrough_data.append(group_data[self.passthrough_columns])
             
             # Collect idx_values from this group safely
             if hasattr(self, 'idx_values') and self.idx_values:
@@ -486,6 +500,8 @@ class DataPreprocessor:
         if all_processed_features:
             processed_array = np.vstack(all_processed_features)
             tolerance_array = np.vstack(all_tolerance_values)
+            if passthrough_data:
+                self.passthrough_data = pd.concat(passthrough_data).reset_index(drop=True)
         else:
             raise ValueError("No data processed from any group")
         

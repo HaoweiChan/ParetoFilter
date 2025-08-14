@@ -95,7 +95,7 @@ Examples:
         # Determine config directory and data path
         config_path = Path(args.config)
         config_dir = config_path.parent
-        data_path = config_dir / input_dir
+        data_path = Path(input_dir)
         
         if not data_path.exists():
             raise FileNotFoundError(f"Data file not found: {data_path}")
@@ -183,6 +183,10 @@ Examples:
         # Add idx values if available from preprocessor
         if hasattr(preprocessor, 'idx_values') and preprocessor.idx_values:
             results['idx_values'] = preprocessor.idx_values
+        
+        if hasattr(preprocessor, 'passthrough_data') and not preprocessor.passthrough_data.empty:
+            results['passthrough_data'] = preprocessor.passthrough_data
+            results['passthrough_columns'] = preprocessor.passthrough_columns
         
         # Add group metadata if available
         if group_metadata:

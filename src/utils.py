@@ -6,9 +6,13 @@ Common functions for configuration handling, validation, and logging.
 
 import sys
 import json
+import yaml
 import logging
-from typing import Dict, Any
+import numpy as np
+import pandas as pd
 from pathlib import Path
+from typing import Dict, Any
+from datetime import datetime
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -17,10 +21,8 @@ def load_config(config_path: str) -> Dict[str, Any]:
     
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
     with open(config_path, 'r') as f:
         if config_path.suffix.lower() in ['.yaml', '.yml']:
-            import yaml
             config = yaml.safe_load(f)
         elif config_path.suffix.lower() == '.json':
             config = json.load(f)
@@ -28,7 +30,6 @@ def load_config(config_path: str) -> Dict[str, Any]:
             raise ValueError(f"Unsupported config file format: {config_path.suffix}")
     
     return config
-
 
 def validate_config(config: Dict[str, Any]) -> None:
     """Validate configuration structure and values."""
@@ -105,7 +106,6 @@ def validate_config(config: Dict[str, Any]) -> None:
                 if not isinstance(idx2_value, (int, float)):
                     raise ValueError(f"Variable '{var_name}' idx2_value must be numeric for value strategy")
 
-
 def setup_logging(verbose: bool = False, log_file: str = None) -> None:
     """Setup logging configuration."""
     level = logging.DEBUG if verbose else logging.INFO
@@ -120,15 +120,13 @@ def setup_logging(verbose: bool = False, log_file: str = None) -> None:
         handlers=handlers
     )
 
-
 def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
     """Save results to file in specified format."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     if format.lower() == 'csv':
-        import pandas as pd
-        import numpy as np
+        
         
         if isinstance(data, np.ndarray):
             df = pd.DataFrame(data)
@@ -139,7 +137,29 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
             feature_names = data['feature_names']
             
             # Create DataFrame columns, ensuring IDX columns immediately follow their variable
-            df_data = {'candidate_index': pareto_indices}
+            df_data = {}
+            
+            # Add groupby columns if they exist
+            if 'groupby_columns' in data and 'grouped_results' in data:
+                groupby_columns = data['groupby_columns']
+                grouped_results = data['grouped_results']
+                
+                # Create a mapping from candidate_index to group values
+                index_to_group = {}
+                for group in grouped_results:
+                    group_values = group['group']
+                    for idx in group['pareto_indices']:
+                        index_to_group[idx] = group_values
+                
+                # Add group columns to the DataFrame
+                for col_name in groupby_columns:
+                    df_data[col_name] = [index_to_group.get(idx, {}).get(col_name, None) for idx in pareto_indices]
+
+            if 'passthrough_data' in data and 'passthrough_columns' in data:
+                passthrough_df = data['passthrough_data'].iloc[pareto_indices]
+                for col_name in data['passthrough_columns']:
+                    df_data[col_name] = passthrough_df[col_name].values
+
             pareto_indices_arr = np.asarray(pareto_indices, dtype=int)
 
             idx_values = data.get('idx_values', {})
@@ -198,11 +218,8 @@ def save_results(data: Any, output_path: str, format: str = 'csv') -> None:
     else:
         raise ValueError(f"Unsupported output format: {format}")
 
-
 def create_run_directory(run_name: str = None) -> Path:
-    """Create a new run directory with timestamp."""
-    from datetime import datetime
-    
+    """Create a new run directory with timestamp."""    
     if run_name is None:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         run_name = f"run_{timestamp}"
