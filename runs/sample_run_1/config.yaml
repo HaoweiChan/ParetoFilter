@@ -1,14 +1,13 @@
 run:
   # Use CSV folder instead of single file
-  input_dir: /path/to/csv/folder  # This should be a folder containing CSV files
+  input_dir: runs/sample_run_1/input  # This should be a folder containing CSV files
   output_processed_data: true
-  use_input_prefix: true
+  use_input_prefix: false
 
 # Groupby configuration - data will be grouped by these columns
 # and Pareto selection will be run separately for each group
 groupby_columns:
   - FP
-  - STD
 
 visualization:
   dashboard_host: localhost

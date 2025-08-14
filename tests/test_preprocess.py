@@ -199,21 +199,28 @@ def save_sample_run_files(data: pd.DataFrame, config: dict, output_dir: str = "r
     df.to_csv(data_path, index=False)
     print(f"Saved sample data to: {data_path}")
     
-    # Save sample configuration
+    # Save sample configuration only if it doesn't exist
     config_path = output_path / "config.yaml"
-    with open(config_path, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False, indent=2)
-    print(f"Saved sample config to: {config_path}")
+    if not config_path.exists():
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, indent=2)
+        print(f"Saved sample config to: {config_path}")
+    else:
+        print(f"Config file already exists, skipping save: {config_path}")
     
     return data_path, config_path
 
 
-def test_sample_run_preprocessing(data_path: str, config: dict):
+def test_sample_run_preprocessing(data_path: str, config_path: str):
     """Test the preprocessing functionality for sample_run_1."""
     print("\n" + "="*50)
     print("TESTING SAMPLE RUN PREPROCESSING FUNCTIONALITY")
     print("="*50)
     
+    # Load config from file to ensure it's the latest version
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
     # Create preprocessor
     preprocessor = DataPreprocessor(config)
     
@@ -290,7 +297,7 @@ def main():
     data_path, config_path = save_sample_run_files(sample_data, sample_config)
     
     # Test preprocessing
-    processed_data, tolerances = test_sample_run_preprocessing(data_path, sample_config)
+    processed_data, tolerances = test_sample_run_preprocessing(data_path, config_path)
     
     print(f"\n" + "="*50)
     print("SAMPLE RUN CREATED SUCCESSFULLY!")
