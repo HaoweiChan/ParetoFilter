@@ -380,7 +380,19 @@ class DataPreprocessor:
                 else:  # value strategy with interpolation
                     actual_idx1 = float(idx1_value)
                     actual_idx2 = float(idx2_value) if is_2d else None
-                    
+
+                    # Warn if extrapolating
+                    if not (idx1_data[i][0] <= actual_idx1 <= idx1_data[i][-1]):
+                        self.logger.warning(
+                            f"IDX1 value {actual_idx1} is outside the range "
+                            f"[{idx1_data[i][0]}, {idx1_data[i][-1]}] for row {i}. Extrapolating."
+                        )
+                    if is_2d and not (idx2_data[i][0] <= actual_idx2 <= idx2_data[i][-1]):
+                        self.logger.warning(
+                            f"IDX2 value {actual_idx2} is outside the range "
+                            f"[{idx2_data[i][0]}, {idx2_data[i][-1]}] for row {i}. Extrapolating."
+                        )
+
                     if is_2d:
                         f_i = np.interp(actual_idx1, idx1_data[i], np.arange(len(idx1_data[i])))
                         f_j = np.interp(actual_idx2, idx2_data[i], np.arange(len(idx2_data[i])))
