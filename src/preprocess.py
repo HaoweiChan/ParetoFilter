@@ -9,8 +9,9 @@ import ast
 import numpy as np
 import pandas as pd
 import logging
-from typing import Any, Dict, List, Tuple, Union
 from pathlib import Path
+from scipy.interpolate import interpn
+from typing import Any, Dict, List, Tuple
 
 
 class DataPreprocessor:
@@ -159,81 +160,33 @@ class DataPreprocessor:
             return [self._to_list_recursive(x) for x in obj]
         return obj
 
-    def _find_float_bin_index(self, selected_value: float, bin_edges: List[float]) -> float:
-        """Find the floating-point bin index for a selected value given bin edges for interpolation."""
-        if not isinstance(bin_edges, list) or not bin_edges:
-            raise ValueError("bin_edges must be a non-empty list.")
-
-        if len(bin_edges) == 1:
-            if selected_value == bin_edges[0]:
-                return 0.0
-            raise ValueError(f"Selected value {selected_value} does not match the only bin edge {bin_edges[0]}")
-
-        bin_edges_arr = np.array(sorted(bin_edges))
-
-        if not (bin_edges_arr[0] <= selected_value <= bin_edges_arr[-1]):
-            raise ValueError(f"Selected value {selected_value} is outside bin range [{bin_edges_arr[0]}, {bin_edges_arr[-1]}]")
-
-        pos = np.searchsorted(bin_edges_arr, selected_value, side='right') - 1
-        pos = max(0, min(pos, len(bin_edges_arr) - 2))
-
-        lower_bound = bin_edges_arr[pos]
-        upper_bound = bin_edges_arr[pos + 1]
-
-        if np.isclose(upper_bound, lower_bound):
-            fraction = 0.0
-        else:
-            fraction = (selected_value - lower_bound) / (upper_bound - lower_bound)
-        
-        return pos + fraction
-
     def _interpolate_1d(self, arr: List[float], f_i: float) -> float:
         """Performs linear interpolation on a 1D array."""
-        num_elements = len(arr)
-        if num_elements == 0:
+        if not arr:
             return np.nan
-
-        i_low = int(f_i)
-        i_low = max(0, min(i_low, num_elements - 1))
-        i_high = min(i_low + 1, num_elements - 1)
-        
-        di = f_i - i_low
-
-        v_low = arr[i_low]
-        v_high = arr[i_high]
-        
-        return v_low * (1 - di) + v_high * di
+        x = np.arange(len(arr))
+        return np.interp(f_i, x, arr)
 
     def _interpolate_2d(self, grid: List[List[float]], f_i: float, f_j: float) -> float:
-        """Performs bilinear interpolation on a 2D grid."""
-        num_rows = len(grid)
-        if num_rows == 0 or not isinstance(grid[0], list):
-            return np.nan
-        num_cols = len(grid[0])
-        if num_cols == 0:
+        """Performs bilinear interpolation on a 2D grid with extrapolation."""
+        if not grid or not grid[0]:
             return np.nan
 
-        i_low = int(f_i)
-        j_low = int(f_j)
+        grid_arr = np.array(grid)
+        num_rows, num_cols = grid_arr.shape
         
-        i_low = max(0, min(i_low, num_rows - 1))
-        j_low = max(0, min(j_low, num_cols - 1))
+        points = (np.arange(num_rows), np.arange(num_cols))
+        xi = np.array([f_i, f_j])
         
-        i_high = min(i_low + 1, num_rows - 1)
-        j_high = min(j_low + 1, num_cols - 1)
-        
-        di = f_i - i_low
-        dj = f_j - j_low
-
-        v00 = grid[i_low][j_low]
-        v10 = grid[i_high][j_low]
-        v01 = grid[i_low][j_high]
-        v11 = grid[i_high][j_high]
-
-        v_j_low = v00 * (1 - di) + v10 * di
-        v_j_high = v01 * (1 - di) + v11 * di
-        
-        return v_j_low * (1 - dj) + v_j_high * dj
+        try:
+            return interpn(points, grid_arr, xi, method='linear', bounds_error=False, fill_value=None)[0]
+        except Exception as e:
+            self.logger.warning(f"2D interpolation failed: {e}. Falling back to nearest-neighbor.")
+            i = int(round(f_i))
+            j = int(round(f_j))
+            i = max(0, min(i, num_rows - 1))
+            j = max(0, min(j, num_cols - 1))
+            return grid_arr[i, j]
 
     def _filter_invalid_rows(self, data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Drop rows with empty/unparseable multi-value or IDX data and log warnings.
@@ -296,10 +249,12 @@ class DataPreprocessor:
                             raise ValueError(f"{var_name} is not a list or list-of-lists")
                         is_2d = len(parsed_var) > 0 and isinstance(parsed_var[0], list)
 
-                        # Ensure selected values fall within bin ranges
-                        _ = self._find_float_bin_index(float(idx1_value), parsed_idx1)
-                        if is_2d:
-                            _ = self._find_float_bin_index(float(idx2_value), parsed_idx2)
+                        # Check if IDX arrays have sufficient length
+                        if not parsed_idx1 or (is_2d and not parsed_idx2):
+                            raise ValueError("IDX data is empty or incomplete for value-based selection")
+
+                        # The check for out-of-bounds is removed, extrapolation is now handled.
+                        
                     except Exception as e:
                         invalid_indices.add(row_idx)
                         groupby_columns = self.config.get('groupby_columns', [])
@@ -427,11 +382,11 @@ class DataPreprocessor:
                     actual_idx2 = float(idx2_value) if is_2d else None
                     
                     if is_2d:
-                        f_i = self._find_float_bin_index(actual_idx1, idx1_data[i])
-                        f_j = self._find_float_bin_index(actual_idx2, idx2_data[i])
+                        f_i = np.interp(actual_idx1, idx1_data[i], np.arange(len(idx1_data[i])))
+                        f_j = np.interp(actual_idx2, idx2_data[i], np.arange(len(idx2_data[i])))
                         value = self._interpolate_2d(var_data[i], f_i, f_j)
-                    else: # 1D
-                        f_i = self._find_float_bin_index(actual_idx1, idx1_data[i])
+                    else:  # 1D
+                        f_i = np.interp(actual_idx1, idx1_data[i], np.arange(len(idx1_data[i])))
                         value = self._interpolate_1d(var_data[i], f_i)
                 
                 results.append(value)
