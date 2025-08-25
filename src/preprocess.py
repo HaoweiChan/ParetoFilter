@@ -78,11 +78,11 @@ class DataPreprocessor:
     def validate_data(self, data: pd.DataFrame) -> None:
         """Validate that data contains all required variables."""
         # Check for required groupby columns if they exist in config
-        groupby_columns = self.config.get('groupby_columns', ['FP', 'STD'])
-        missing_groupby = [col for col in groupby_columns if col in data.columns]
-        if len(missing_groupby) != len(groupby_columns):
+        groupby_columns = self.config.get('groupby_columns')
+        if groupby_columns:
             missing = [col for col in groupby_columns if col not in data.columns]
-            self.logger.warning(f"Some groupby columns not found: {missing}")
+            if missing:
+                self.logger.warning(f"Some groupby columns not found: {missing}")
         
         # Check for configured variables
         missing_vars = []
