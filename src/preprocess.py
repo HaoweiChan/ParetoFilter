@@ -428,15 +428,36 @@ class DataPreprocessor:
             else:  # legacy strategies return array directly
                 var_data = result
         
+        # Debug: Print data statistics
+        data_min = np.min(var_data)
+        data_max = np.max(var_data)
+        data_mean = np.mean(var_data)
+        data_std = np.std(var_data)
+        max_abs_val = np.max(np.abs(var_data))
+        
         if tolerance_type == 'absolute':
+            actual_tolerance = tolerance_value
+            self.logger.info(f"TOLERANCE DEBUG - Variable: {var_name}")
+            self.logger.info(f"  Data range: [{data_min:.6f}, {data_max:.6f}], mean: {data_mean:.6f}, std: {data_std:.6f}")
+            self.logger.info(f"  Tolerance type: absolute, value: {tolerance_value}")
+            self.logger.info(f"  Actual tolerance: {actual_tolerance}")
             return np.full_like(var_data, tolerance_value, dtype=float)
         
         elif tolerance_type == 'relative':
-            max_val = np.max(np.abs(var_data))
-            if max_val == 0:
+            if max_abs_val == 0:
                 self.logger.warning(f"Variable {var_name} has all zero values, using small absolute tolerance")
-                return np.full_like(var_data, 1e-6, dtype=float)
-            return np.full_like(var_data, tolerance_value * max_val, dtype=float)
+                actual_tolerance = 1e-6
+            else:
+                actual_tolerance = tolerance_value * max_abs_val
+            
+            self.logger.info(f"TOLERANCE DEBUG - Variable: {var_name}")
+            self.logger.info(f"  Data range: [{data_min:.6f}, {data_max:.6f}], mean: {data_mean:.6f}, std: {data_std:.6f}")
+            self.logger.info(f"  Max absolute value: {max_abs_val:.6f}")
+            self.logger.info(f"  Tolerance type: relative, config value: {tolerance_value}")
+            self.logger.info(f"  Actual tolerance: {actual_tolerance:.6f} (= {tolerance_value} × {max_abs_val:.6f})")
+            self.logger.info(f"  Tolerance as % of data range: {(actual_tolerance / (data_max - data_min) * 100):.2f}%" if data_max != data_min else "N/A (no range)")
+            
+            return np.full_like(var_data, actual_tolerance, dtype=float)
         
         else:
             raise ValueError(f"Unknown tolerance type: {tolerance_type}")

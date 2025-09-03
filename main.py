@@ -46,15 +46,24 @@ Examples:
     parser.add_argument('--processed-output', help='Output file for processed data')
     parser.add_argument('--run-dir', help='Run directory for outputs (defaults to config file directory)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging (includes detailed tolerance analysis)')
     parser.add_argument('--dashboard-only', action='store_true', help='Only launch dashboard using vis_data.npz and config (skip processing)')
     parser.add_argument('--visualize', action='store_true', help='Launch dashboard after processing. Dashboard will not start unless this flag is provided (ignores config setting).')
     parser.add_argument('--bind-all', action='store_true', help='Bind dashboard to all network interfaces (0.0.0.0), making it accessible externally.')
     
     args = parser.parse_args()
     
+    # Set up logging with debug support
+    if args.debug:
+        setup_logging(verbose=True)  # Debug implies verbose
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        setup_logging(verbose=args.verbose)
+    
     # Load and validate configuration first
     logger = logging.getLogger(__name__)
-    setup_logging(args.verbose)
+    if args.debug:
+        logger.info("=== DEBUG MODE: Detailed tolerance and group analysis enabled ===")
     
     try:
         if args.dashboard_only:

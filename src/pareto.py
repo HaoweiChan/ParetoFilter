@@ -6,7 +6,7 @@ Handles multi-objective optimization with tolerance-based epsilon configuration.
 
 import logging
 import numpy as np
-from typing import Dict, Any, Tuple, List, Optional
+from typing import Dict, Any, Tuple, List
 from platypus import EpsilonBoxArchive, Problem, Solution
 
 
@@ -44,6 +44,18 @@ class ParetoSelector:
             tol_array = tolerances
         
         self.logger.debug(f"Tolerance values: {tol_array.tolist()}")
+        self.logger.debug(f"Objective directions: {directions}")
+        
+        # Debug: Show epsilon-to-data-range ratios
+        self.logger.debug(f"EPSILON vs DATA RANGE analysis:")
+        for i, (name, eps) in enumerate(zip(self.feature_names, tol_array)):
+            feature_data = data[:, i]
+            data_range = np.max(feature_data) - np.min(feature_data)
+            if data_range > 0:
+                ratio = eps / data_range
+                self.logger.debug(f"  {name}: epsilon={eps:.6f}, data_range={data_range:.6f}, ratio={ratio:.6f} ({ratio*100:.2f}%)")
+            else:
+                self.logger.debug(f"  {name}: epsilon={eps:.6f}, data_range=0 (constant values)")
         
         # Create Platypus Problem
         problem = Problem(1, len(self.feature_names))  # 1 variable (for index), n objectives
@@ -78,7 +90,8 @@ class ParetoSelector:
         
         pareto_values = np.array(pareto_values)
         
-        self.logger.info(f"Pareto frontier selected: {len(pareto_indices)} candidates from {data.shape[0]} total")
+        selection_ratio = len(pareto_indices) / data.shape[0]
+        self.logger.info(f"Pareto frontier selected: {len(pareto_indices)} candidates from {data.shape[0]} total (ratio: {selection_ratio:.3f})")
         
         return pareto_indices, pareto_values
 
@@ -142,17 +155,41 @@ class ParetoSelector:
         
         for group_key, indices in groups.items():
             group_dict = dict(group_key)
-            self.logger.info(f"Processing group: {group_dict} ({len(indices)} candidates)")
+            self.logger.info(f"\n=== PROCESSING GROUP: {group_dict} ({len(indices)} candidates) ===")
             
             # Extract group data
             group_data = data[indices]
             group_tolerances = tolerances[indices] if tolerances.ndim == 2 else tolerances
+            
+            # Debug: Show group data statistics
+            self.logger.info(f"GROUP DATA STATS:")
+            for i, feature_name in enumerate(self.feature_names):
+                feature_data = group_data[:, i]
+                data_min = np.min(feature_data)
+                data_max = np.max(feature_data)
+                data_mean = np.mean(feature_data)
+                data_std = np.std(feature_data)
+                self.logger.info(f"  {feature_name}: range=[{data_min:.6f}, {data_max:.6f}], mean={data_mean:.6f}, std={data_std:.6f}")
+            
+            # Show epsilon values being used
+            if group_tolerances.ndim == 2:
+                eps_values = group_tolerances[0, :]
+            else:
+                eps_values = group_tolerances
+            self.logger.info(f"EPSILON VALUES: {[f'{name}={eps:.6f}' for name, eps in zip(self.feature_names, eps_values)]}")
             
             # Perform Pareto selection for this group
             group_pareto_indices, group_pareto_values = self.select(group_data, group_tolerances)
             
             # Map back to original indices
             original_pareto_indices = [indices[i] for i in group_pareto_indices]
+            
+            # Debug: Show selection results
+            selection_ratio = len(group_pareto_indices) / len(indices)
+            self.logger.info(f"GROUP RESULTS:")
+            self.logger.info(f"  Total candidates: {len(indices)}")
+            self.logger.info(f"  Pareto selected: {len(group_pareto_indices)}")
+            self.logger.info(f"  Selection ratio: {selection_ratio:.3f} ({selection_ratio*100:.1f}%)")
             
             # Store results
             all_pareto_indices.extend(original_pareto_indices)
@@ -171,6 +208,18 @@ class ParetoSelector:
         # Combine all Pareto values
         combined_pareto_values = np.array(all_pareto_values) if all_pareto_values else np.array([])
         
-        self.logger.info(f"Grouped Pareto selection complete: {len(all_pareto_indices)} total candidates selected from {len(groups)} groups")
+        # Summary statistics
+        self.logger.info(f"\n=== GROUPED SELECTION SUMMARY ===")
+        self.logger.info(f"Total groups processed: {len(groups)}")
+        self.logger.info(f"Total candidates across all groups: {data.shape[0]}")
+        self.logger.info(f"Total Pareto candidates selected: {len(all_pareto_indices)}")
+        overall_ratio = len(all_pareto_indices) / data.shape[0]
+        self.logger.info(f"Overall selection ratio: {overall_ratio:.3f} ({overall_ratio*100:.1f}%)")
+        
+        # Group-wise summary
+        self.logger.info(f"Per-group selection ratios:")
+        for meta in group_metadata:
+            group_ratio = meta['reduction_ratio']
+            self.logger.info(f"  {meta['group']}: {meta['pareto_candidates']}/{meta['total_candidates']} = {group_ratio:.3f} ({group_ratio*100:.1f}%)")
         
         return all_pareto_indices, combined_pareto_values, group_metadata 
